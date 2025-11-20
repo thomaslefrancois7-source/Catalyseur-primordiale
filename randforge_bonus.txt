@@ -1,0 +1,1910 @@
+// randforge_bonus.nss
+// ==========================================================================
+//  Applique des ItemProperty selon le cahier des charges (rareté 1..5).
+//  - CORRIGÉ et COMPLET selon documentation NWScript et cahier des charges
+//  - Toutes les propriétés implémentées avec les bonnes restrictions
+//  - Mappings de constantes corrigés
+//  - Vérifications de type d'item (1H/2H, Melee/Ranged, Armure/Bijoux)
+// ==========================================================================
+
+// ======================
+//  Rareté (tiers)
+// ======================
+const int RF_RARITY_BANAL       = 1;
+const int RF_RARITY_INHABITUEL  = 2;
+const int RF_RARITY_RARE        = 3;
+const int RF_RARITY_EPIQUE      = 4;
+const int RF_RARITY_LEGENDAIRE  = 5;
+
+const int RFB_ONHIT_ULTRA_PCT = 4;
+const int RFB_ONHIT_HIGH_PCT  = 16;
+
+// ======================
+//  CONFIG – toggles & chances
+// ======================
+
+const int   ENABLE_AC_BONUS                     = TRUE;  const float CHANCE_AC_BONUS                      = 0.90;
+const int   ENABLE_AC_VS_ALIGN                  = TRUE;  const float CHANCE_AC_VS_ALIGN                   = 0.10;
+const int   ENABLE_AC_VS_DMG                    = TRUE;  const float CHANCE_AC_VS_DMG                     = 0.10;
+const int   ENABLE_AC_VS_RACE                   = TRUE;  const float CHANCE_AC_VS_RACE                    = 0.10;
+const int   ENABLE_AC_VS_SALIGN                 = TRUE;  const float CHANCE_AC_VS_SALIGN                  = 0.10;
+
+const int   ENABLE_ADDITIONAL                   = TRUE;  const float CHANCE_ADDITIONAL                    = 0.05;
+const int   ENABLE_ARCANE_FAIL                  = TRUE;  const float CHANCE_ARCANE_FAIL                   = 0.03;
+
+const int   ENABLE_ATK_BONUS                    = TRUE;  const float CHANCE_ATK_BONUS                     = 0.90;
+const int   ENABLE_ATK_VS_ALIGN                 = TRUE;  const float CHANCE_ATK_VS_ALIGN                  = 0.10;
+const int   ENABLE_ATK_VS_RACE                  = TRUE;  const float CHANCE_ATK_VS_RACE                   = 0.10;
+const int   ENABLE_ATK_VS_SALIGN                = TRUE;  const float CHANCE_ATK_VS_SALIGN                 = 0.10;
+const int   ENABLE_ATK_PENALTY                  = TRUE;  const float CHANCE_ATK_PENALTY                   = 0.10;
+
+const int   ENABLE_BONUS_FEAT                   = TRUE;  const float CHANCE_BONUS_FEAT                    = 0.03;
+const int   ENABLE_BONUS_LEVEL_SPELL            = TRUE;  const float CHANCE_BONUS_LEVEL_SPELL             = 0.10;
+const int   ENABLE_BONUS_SAVE_BASE              = TRUE;  const float CHANCE_BONUS_SAVE_BASE               = 0.20;
+const int   ENABLE_BONUS_SAVE_VS                = TRUE;  const float CHANCE_BONUS_SAVE_VS                 = 0.05;
+const int   ENABLE_BONUS_SR                     = TRUE;  const float CHANCE_BONUS_SR                      = 0.05;
+
+const int   ENABLE_CAST_SPELL                   = TRUE;  const float CHANCE_CAST_SPELL                    = 0.03;
+const int   ENABLE_CONTAINER_REDUCED_WEIGHT     = TRUE;  const float CHANCE_CONTAINER_REDUCED_WEIGHT      = 0.03;
+
+const int   ENABLE_DMG_BONUS                    = TRUE;  const float CHANCE_DMG_BONUS                     = 0.70;
+const int   ENABLE_DMG_BONUS_VS_ALIGN           = TRUE;  const float CHANCE_DMG_BONUS_VS_ALIGN            = 0.10;
+const int   ENABLE_DMG_BONUS_VS_RACE            = TRUE;  const float CHANCE_DMG_BONUS_VS_RACE             = 0.05;
+const int   ENABLE_DMG_BONUS_VS_SALIGN          = TRUE;  const float CHANCE_DMG_BONUS_VS_SALIGN           = 0.05;
+
+const int   ENABLE_DMG_IMM_PLASTRON             = TRUE;  const float CHANCE_DMG_IMM_PLASTRON              = 0.40;
+const int   ENABLE_DMG_IMM_BIJOUX               = TRUE;  const float CHANCE_DMG_IMM_BIJOUX                = 0.20;
+const int   ENABLE_DMG_IMM_AUTRES               = TRUE;  const float CHANCE_DMG_IMM_AUTRES                = 0.25;
+const int   ENABLE_DMG_IMM_PER_TYPE             = TRUE;  const float CHANCE_DMG_IMM_PER_TYPE              = 0.25;
+
+const int   ENABLE_DMG_PENALTY                  = TRUE;  const float CHANCE_DMG_PENALTY                   = 0.05;
+const int   ENABLE_DMG_REDUCTION                = TRUE;  const float CHANCE_DMG_REDUCTION                 = 0.15;
+
+const int   ENABLE_DMG_RES_PLASTRON             = TRUE;  const float CHANCE_DMG_RES_PLASTRON              = 0.40;
+const int   ENABLE_DMG_RES_BIJOUX               = TRUE;  const float CHANCE_DMG_RES_BIJOUX                = 0.20;
+const int   ENABLE_DMG_RES_AUTRES               = TRUE;  const float CHANCE_DMG_RES_AUTRES                = 0.25;
+
+const int   ENABLE_DMG_VULN                     = TRUE;  const float CHANCE_DMG_VULN                      = 0.01;
+
+const int   ENABLE_DARKVISION                   = TRUE;  const float CHANCE_DARKVISION                    = 0.01;
+const int   ENABLE_DEC_ABILITY                  = TRUE;  const float CHANCE_DEC_ABILITY                   = 0.05;
+const int   ENABLE_DEC_AC                       = TRUE;  const float CHANCE_DEC_AC                        = 0.05;
+const int   ENABLE_DEC_SKILL                    = TRUE;  const float CHANCE_DEC_SKILL                     = 0.05;
+
+const int   ENABLE_ENH_BONUS                    = TRUE;  const float CHANCE_ENH_BONUS                     = 0.80;
+const int   ENABLE_ENH_VS_ALIGN                 = TRUE;  const float CHANCE_ENH_VS_ALIGN                  = 0.05;
+const int   ENABLE_ENH_VS_RACE                  = TRUE;  const float CHANCE_ENH_VS_RACE                   = 0.05;
+const int   ENABLE_ENH_PENALTY                  = TRUE;  const float CHANCE_ENH_PENALTY                   = 0.04;
+
+const int   ENABLE_EXTRA_MELEE_DMGTYPE          = TRUE;  const float CHANCE_EXTRA_MELEE_DMGTYPE           = 0.03;
+const int   ENABLE_EXTRA_RANGE_DMGTYPE          = TRUE;  const float CHANCE_EXTRA_RANGE_DMGTYPE           = 0.03;
+
+const int   ENABLE_FREE_ACTION                  = TRUE;  const float CHANCE_FREE_ACTION                   = 0.01;
+const int   ENABLE_HASTE                        = TRUE;  const float CHANCE_HASTE                         = 0.01;
+const int   ENABLE_HEALERS_KIT                  = TRUE;  const float CHANCE_HEALERS_KIT                   = 0.03;
+const int   ENABLE_HOLY_AVENGER                 = TRUE;  const float CHANCE_HOLY_AVENGER                  = 0.01;
+
+const int   ENABLE_IMMUNITY_MISC                = TRUE;  const float CHANCE_IMMUNITY_MISC                 = 0.03;
+const float CHANCE_IMM_CRIT_BACKSTAB_INTERNAL   = 0.0005;
+
+const int   ENABLE_IMM_TO_SPELL_LEVEL           = TRUE;  const float CHANCE_IMM_TO_SPELL_LEVEL            = 0.001;
+const int   ENABLE_IMPROVED_EVASION             = TRUE;  const float CHANCE_IMPROVED_EVASION              = 0.01;
+const int   ENABLE_KEEN                         = TRUE;  const float CHANCE_KEEN                          = 0.05;
+const int   ENABLE_LIGHT                        = TRUE;  const float CHANCE_LIGHT                         = 0.10;
+
+const int   ENABLE_LIMIT_BY_ALIGN               = TRUE;  const float CHANCE_LIMIT_BY_ALIGN                = 0.07;
+const int   ENABLE_LIMIT_BY_CLASS               = TRUE;  const float CHANCE_LIMIT_BY_CLASS                = 0.03;
+const int   ENABLE_LIMIT_BY_RACE                = TRUE;  const float CHANCE_LIMIT_BY_RACE                 = 0.04;
+const int   ENABLE_LIMIT_BY_SALIGN              = TRUE;  const float CHANCE_LIMIT_BY_SALIGN               = 0.05;
+
+const int   ENABLE_MASSIVE_CRITICAL             = TRUE;  const float CHANCE_MASSIVE_CRITICAL              = 0.15;
+const int   ENABLE_MAX_RANGE_STR_MOD            = TRUE;  const float CHANCE_MAX_RANGE_STR_MOD             = 0.25;
+const int   ENABLE_NO_DAMAGE                    = TRUE;  const float CHANCE_NO_DAMAGE                     = 0.001;
+
+const int   ENABLE_ONHIT_CASTSPELL              = TRUE;  const float CHANCE_ONHIT_CASTSPELL               = 0.03;
+const int   ENABLE_ONHIT_PROPS                  = TRUE;  const float CHANCE_ONHIT_PROPS                   = 0.03;
+
+const int   ENABLE_REDUCED_SAVE_BASE            = TRUE;  const float CHANCE_REDUCED_SAVE_BASE             = 0.05;
+const int   ENABLE_REDUCED_SAVE_VS              = TRUE;  const float CHANCE_REDUCED_SAVE_VS               = 0.05;
+
+const int   ENABLE_REGEN                        = TRUE;  const float CHANCE_REGEN                         = 0.10;
+const int   ENABLE_SKILL_BONUS                  = TRUE;  const float CHANCE_SKILL_BONUS                   = 0.10;
+const int   ENABLE_SPECIAL_WALK                 = TRUE;  const float CHANCE_SPECIAL_WALK                  = 0.01;
+
+const int   ENABLE_SPELL_IMM_SCHOOL             = TRUE;  const float CHANCE_SPELL_IMM_SCHOOL              = 0.03;
+const int   ENABLE_SPELL_IMM_SPECIFIC           = TRUE;  const float CHANCE_SPELL_IMM_SPECIFIC            = 0.05;
+
+const int   ENABLE_TRUE_SEEING                  = TRUE;  const float CHANCE_TRUE_SEEING                   = 0.01;
+const int   ENABLE_TURN_RESIST                  = TRUE;  const float CHANCE_TURN_RESIST                   = 0.03;
+const int   ENABLE_UNLIMITED_AMMO               = TRUE;  const float CHANCE_UNLIMITED_AMMO                = 0.15;
+const int   ENABLE_VAMP_REGEN_MELEE             = TRUE;  const float CHANCE_VAMP_REGEN_MELEE              = 0.15;
+
+const int   ENABLE_WEIGHT_INCREASE              = TRUE;  const float CHANCE_WEIGHT_INCREASE               = 0.10;
+const int   ENABLE_WEIGHT_REDUCTION             = TRUE;  const float CHANCE_WEIGHT_REDUCTION              = 0.10;
+
+
+// ======================
+// Helpers probas & bornes
+// ======================
+int RFB_TestChance(float fChance)
+{
+    if (fChance <= 0.0) return FALSE;
+    if (fChance >= 1.0) return TRUE;
+    int nRoll = Random(10000);
+    int nThr  = FloatToInt(fChance * 10000.0);
+    return (nRoll < nThr);
+}
+
+int RFB_ClampTier(int nTier)
+{
+    if (nTier < RF_RARITY_BANAL) return RF_RARITY_BANAL;
+    if (nTier > RF_RARITY_LEGENDAIRE) return RF_RARITY_LEGENDAIRE;
+    return nTier;
+}
+
+int RFB_RandInRange(int a, int b)
+{
+    if (a > b) { int t=a; a=b; b=t; }
+    if (b <= a) return a;
+    int n = (b - a) + 1;
+    return a + Random(n);
+}
+
+// ======================
+//  CONVERSION % -> ENUM
+// ======================
+
+int RFB_StepToEnum5_50(int nMax)
+{
+    if (nMax >= 50) return 50;
+    if (nMax >= 45) return 45;
+    if (nMax >= 40) return 40;
+    if (nMax >= 35) return 35;
+    if (nMax >= 30) return 30;
+    if (nMax >= 25) return 25;
+    if (nMax >= 20) return 20;
+    if (nMax >= 15) return 15;
+    if (nMax >= 10) return 10;
+    if (nMax >= 5)  return 5;
+    return 5;
+}
+
+int RFB_ArcaneFailToEnumSigned(int nPct)
+{
+    int nAbs = nPct;
+    if (nAbs < 0) nAbs = -nAbs;
+    int k = RFB_StepToEnum5_50(nAbs);
+
+    if (nPct >= 0)
+    {
+        if (k == 50) return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_50_PERCENT;
+        if (k == 45) return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_45_PERCENT;
+        if (k == 40) return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_40_PERCENT;
+        if (k == 35) return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_35_PERCENT;
+        if (k == 30) return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_30_PERCENT;
+        if (k == 25) return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_25_PERCENT;
+        if (k == 20) return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_20_PERCENT;
+        if (k == 15) return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_15_PERCENT;
+        if (k == 10) return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_10_PERCENT;
+        return IP_CONST_ARCANE_SPELL_FAILURE_PLUS_5_PERCENT;
+    }
+
+    if (k == 50) return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_50_PERCENT;
+    if (k == 45) return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_45_PERCENT;
+    if (k == 40) return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_40_PERCENT;
+    if (k == 35) return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_35_PERCENT;
+    if (k == 30) return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_30_PERCENT;
+    if (k == 25) return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_25_PERCENT;
+    if (k == 20) return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_20_PERCENT;
+    if (k == 15) return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_15_PERCENT;
+    if (k == 10) return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_10_PERCENT;
+    return IP_CONST_ARCANE_SPELL_FAILURE_MINUS_5_PERCENT;
+}
+
+int RFB_ImmPctToEnum(int nPct)
+{
+    if (nPct >= 100) return IP_CONST_DAMAGEIMMUNITY_100_PERCENT;
+    if (nPct >= 90)  return IP_CONST_DAMAGEIMMUNITY_90_PERCENT;
+    if (nPct >= 75)  return IP_CONST_DAMAGEIMMUNITY_75_PERCENT;
+    if (nPct >= 50)  return IP_CONST_DAMAGEIMMUNITY_50_PERCENT;
+    if (nPct >= 25)  return IP_CONST_DAMAGEIMMUNITY_25_PERCENT;
+    if (nPct >= 10)  return IP_CONST_DAMAGEIMMUNITY_10_PERCENT;
+    if (nPct >= 5)   return IP_CONST_DAMAGEIMMUNITY_5_PERCENT;
+    return IP_CONST_DAMAGEIMMUNITY_5_PERCENT;
+}
+
+int RFB_VulnPctToEnum(int nPct)
+{
+    if (nPct >= 100) return IP_CONST_DAMAGEVULNERABILITY_100_PERCENT;
+    if (nPct >= 90)  return IP_CONST_DAMAGEVULNERABILITY_90_PERCENT;
+    if (nPct >= 75)  return IP_CONST_DAMAGEVULNERABILITY_75_PERCENT;
+    if (nPct >= 50)  return IP_CONST_DAMAGEVULNERABILITY_50_PERCENT;
+    if (nPct >= 25)  return IP_CONST_DAMAGEVULNERABILITY_25_PERCENT;
+    if (nPct >= 10)  return IP_CONST_DAMAGEVULNERABILITY_10_PERCENT;
+    if (nPct >= 5)   return IP_CONST_DAMAGEVULNERABILITY_5_PERCENT;
+    return IP_CONST_DAMAGEVULNERABILITY_5_PERCENT;
+}
+
+int RFB_StepToResistAmount(int nMax)
+{
+    if (nMax >= 30) return IP_CONST_DAMAGERESIST_30;
+    if (nMax >= 25) return IP_CONST_DAMAGERESIST_25;
+    if (nMax >= 20) return IP_CONST_DAMAGERESIST_20;
+    if (nMax >= 15) return IP_CONST_DAMAGERESIST_15;
+    if (nMax >= 10) return IP_CONST_DAMAGERESIST_10;
+    return IP_CONST_DAMAGERESIST_5;
+}
+
+int RFB_SpellResToEnumMax(int nMax)
+{
+    if (nMax >= 32) return IP_CONST_SPELLRESISTANCEBONUS_32;
+    if (nMax >= 30) return IP_CONST_SPELLRESISTANCEBONUS_30;
+    if (nMax >= 28) return IP_CONST_SPELLRESISTANCEBONUS_28;
+    if (nMax >= 26) return IP_CONST_SPELLRESISTANCEBONUS_26;
+    if (nMax >= 24) return IP_CONST_SPELLRESISTANCEBONUS_24;
+    if (nMax >= 22) return IP_CONST_SPELLRESISTANCEBONUS_22;
+    if (nMax >= 20) return IP_CONST_SPELLRESISTANCEBONUS_20;
+    if (nMax >= 18) return IP_CONST_SPELLRESISTANCEBONUS_18;
+    if (nMax >= 16) return IP_CONST_SPELLRESISTANCEBONUS_16;
+    if (nMax >= 14) return IP_CONST_SPELLRESISTANCEBONUS_14;
+    return IP_CONST_SPELLRESISTANCEBONUS_12;
+}
+
+int RFB_WeightReductionToEnum(int nPct)
+{
+    if (nPct >= 100) return IP_CONST_REDUCEDWEIGHT_80_PERCENT;
+    if (nPct >= 80)  return IP_CONST_REDUCEDWEIGHT_80_PERCENT;
+    if (nPct >= 60)  return IP_CONST_REDUCEDWEIGHT_60_PERCENT;
+    if (nPct >= 40)  return IP_CONST_REDUCEDWEIGHT_40_PERCENT;
+    return IP_CONST_REDUCEDWEIGHT_20_PERCENT;
+}
+
+int RFB_ContainerWeightRedToEnum(int nPct)
+{
+    if (nPct >= 100) return IP_CONST_CONTAINERWEIGHTRED_100_PERCENT;
+    if (nPct >= 80)  return IP_CONST_CONTAINERWEIGHTRED_80_PERCENT;
+    if (nPct >= 60)  return IP_CONST_CONTAINERWEIGHTRED_60_PERCENT;
+    return IP_CONST_CONTAINERWEIGHTRED_40_PERCENT;
+}
+
+// NOUVEAU : Conversion cumul dégâts -> dé (1d4=4, 1d6=6, etc.)
+int RFB_DamageBonusFromMax(int nMax)
+{
+    if (nMax >= 52) return IP_CONST_DAMAGEBONUS_2d12;
+    if (nMax >= 40) return IP_CONST_DAMAGEBONUS_2d10;
+    if (nMax >= 32) return IP_CONST_DAMAGEBONUS_2d8;
+    if (nMax >= 22) return IP_CONST_DAMAGEBONUS_2d6;
+    if (nMax >= 16) return IP_CONST_DAMAGEBONUS_2d4;
+    if (nMax >= 12) return IP_CONST_DAMAGEBONUS_1d12;
+    if (nMax >= 10) return IP_CONST_DAMAGEBONUS_1d10;
+    if (nMax >= 8)  return IP_CONST_DAMAGEBONUS_1d8;
+    if (nMax >= 6)  return IP_CONST_DAMAGEBONUS_1d6;
+    if (nMax >= 4)  return IP_CONST_DAMAGEBONUS_1d4;
+    return IP_CONST_DAMAGEBONUS_1d4;
+}
+
+int RFB_MassiveCritFromMax(int nMax)
+{
+    if (nMax >= 58) return IP_CONST_DAMAGEBONUS_2d12;
+    if (nMax >= 44) return IP_CONST_DAMAGEBONUS_2d10;
+    if (nMax >= 26) return IP_CONST_DAMAGEBONUS_2d8;
+    if (nMax >= 14) return IP_CONST_DAMAGEBONUS_2d6;
+    if (nMax >= 6)  return IP_CONST_DAMAGEBONUS_1d12;
+    return IP_CONST_DAMAGEBONUS_1d10;
+}
+
+// NOUVEAU : Mapping Damage Reduction
+int RFB_DmgReductionEnhancement(int nTier)
+{
+    if (nTier >= 5) return IP_CONST_DAMAGEREDUCTION_7;
+    if (nTier >= 4) return IP_CONST_DAMAGEREDUCTION_5;
+    if (nTier >= 3) return IP_CONST_DAMAGEREDUCTION_3;
+    if (nTier >= 2) return IP_CONST_DAMAGEREDUCTION_2;
+    return IP_CONST_DAMAGEREDUCTION_1;
+}
+
+int RFB_DmgReductionSoak(int nTier)
+{
+    if (nTier >= 5) return IP_CONST_DAMAGESOAK_20_HP;
+    if (nTier >= 4) return IP_CONST_DAMAGESOAK_15_HP;
+    if (nTier >= 3) return IP_CONST_DAMAGESOAK_15_HP;
+    if (nTier >= 2) return IP_CONST_DAMAGESOAK_10_HP;
+    return IP_CONST_DAMAGESOAK_5_HP;
+}
+
+
+// ======================
+//  TYPE CHECKS
+// ======================
+int RFB_IsWeapon(object oItem)
+{
+    int nBase = GetBaseItemType(oItem);
+    switch (nBase)
+    {
+        case BASE_ITEM_BASTARDSWORD: case BASE_ITEM_BATTLEAXE: case BASE_ITEM_CLUB:
+        case BASE_ITEM_DAGGER: case BASE_ITEM_DIREMACE: case BASE_ITEM_DOUBLEAXE:
+        case BASE_ITEM_DWARVENWARAXE: case BASE_ITEM_GREATAXE: case BASE_ITEM_GREATSWORD:
+        case BASE_ITEM_HALBERD: case BASE_ITEM_HANDAXE: case BASE_ITEM_HEAVYFLAIL:
+        case BASE_ITEM_KAMA: case BASE_ITEM_KATANA: case BASE_ITEM_KUKRI:
+        case BASE_ITEM_LIGHTFLAIL: case BASE_ITEM_LIGHTHAMMER: case BASE_ITEM_LIGHTMACE:
+        case BASE_ITEM_LONGSWORD: case BASE_ITEM_MORNINGSTAR: case BASE_ITEM_QUARTERSTAFF:
+        case BASE_ITEM_RAPIER: case BASE_ITEM_SCIMITAR: case BASE_ITEM_SCYTHE:
+        case BASE_ITEM_SHORTSPEAR: case BASE_ITEM_SHORTSWORD: case BASE_ITEM_SICKLE:
+        case BASE_ITEM_TRIDENT: case BASE_ITEM_TWOBLADEDSWORD: case BASE_ITEM_WARHAMMER:
+        case BASE_ITEM_WHIP: case BASE_ITEM_MAGICSTAFF:
+        case BASE_ITEM_LONGBOW: case BASE_ITEM_SHORTBOW:
+        case BASE_ITEM_SHURIKEN: case BASE_ITEM_SLING:
+        case BASE_ITEM_HEAVYCROSSBOW: case BASE_ITEM_LIGHTCROSSBOW:
+            return TRUE;
+    }
+    return FALSE;
+}
+
+int RFB_IsRangedWeapon(object oItem)
+{
+    int nBase = GetBaseItemType(oItem);
+    switch (nBase)
+    {
+        case BASE_ITEM_LONGBOW: case BASE_ITEM_SHORTBOW:
+        case BASE_ITEM_SHURIKEN: case BASE_ITEM_SLING:
+        case BASE_ITEM_HEAVYCROSSBOW: case BASE_ITEM_LIGHTCROSSBOW:
+            return TRUE;
+    }
+    return FALSE;
+}
+
+int RFB_IsMeleeWeapon(object oItem)
+{
+    if (RFB_IsRangedWeapon(oItem)) return FALSE;
+    return RFB_IsWeapon(oItem);
+}
+
+// NOUVEAU : Détection arme 2 mains
+int RFB_IsTwoHandedWeapon(object oItem)
+{
+    int nBase = GetBaseItemType(oItem);
+    switch (nBase)
+    {
+        case BASE_ITEM_GREATAXE:
+        case BASE_ITEM_GREATSWORD:
+        case BASE_ITEM_HALBERD:
+        case BASE_ITEM_TWOBLADEDSWORD:
+        case BASE_ITEM_SCYTHE:
+        case BASE_ITEM_HEAVYFLAIL:
+        case BASE_ITEM_QUARTERSTAFF:
+        case BASE_ITEM_DOUBLEAXE:
+        case BASE_ITEM_DIREMACE:
+            return TRUE;
+    }
+    return FALSE;
+}
+
+int RFB_IsArmor(object oItem)
+{
+    return (GetBaseItemType(oItem) == BASE_ITEM_ARMOR);
+}
+
+int RFB_IsJewelry(object oItem)
+{
+    int nBase = GetBaseItemType(oItem);
+    return (nBase == BASE_ITEM_RING || nBase == BASE_ITEM_AMULET);
+}
+
+
+// ======================
+//  RANDOM PICKERS
+// ======================
+int RFB_RandAbility()
+{
+    int r = Random(6);
+    if (r==0) return IP_CONST_ABILITY_STR;
+    if (r==1) return IP_CONST_ABILITY_DEX;
+    if (r==2) return IP_CONST_ABILITY_CON;
+    if (r==3) return IP_CONST_ABILITY_INT;
+    if (r==4) return IP_CONST_ABILITY_WIS;
+    return IP_CONST_ABILITY_CHA;
+}
+
+int RFB_RandSaveBase()
+{
+    int r = Random(3);
+    if (r==0) return IP_CONST_SAVEBASETYPE_FORTITUDE;
+    if (r==1) return IP_CONST_SAVEBASETYPE_REFLEX;
+    return IP_CONST_SAVEBASETYPE_WILL;
+}
+
+int RFB_RandSaveVs()
+{
+    int r = Random(13);
+    if (r==0) return IP_CONST_SAVEVS_ACID;
+    if (r==1) return IP_CONST_SAVEVS_COLD;
+    if (r==2) return IP_CONST_SAVEVS_DEATH;
+    if (r==3) return IP_CONST_SAVEVS_DISEASE;
+    if (r==4) return IP_CONST_SAVEVS_DIVINE;
+    if (r==5) return IP_CONST_SAVEVS_ELECTRICAL;
+    if (r==6) return IP_CONST_SAVEVS_FEAR;
+    if (r==7) return IP_CONST_SAVEVS_FIRE;
+    if (r==8) return IP_CONST_SAVEVS_MINDAFFECTING;
+    if (r==9) return IP_CONST_SAVEVS_NEGATIVE;
+    if (r==10) return IP_CONST_SAVEVS_POISON;
+    if (r==11) return IP_CONST_SAVEVS_POSITIVE;
+    if (r==12) return IP_CONST_SAVEVS_SONIC;
+    return IP_CONST_SAVEVS_MINDAFFECTING;
+}
+
+// CORRIGÉ : Types de dégâts élémentaires/énergétiques (8 types autorisés)
+int RFB_RandDmgType()
+{
+    int r = Random(8);
+    if (r==0) return IP_CONST_DAMAGETYPE_ACID;
+    if (r==1) return IP_CONST_DAMAGETYPE_COLD;
+    if (r==2) return IP_CONST_DAMAGETYPE_ELECTRICAL;
+    if (r==3) return IP_CONST_DAMAGETYPE_FIRE;
+    if (r==4) return IP_CONST_DAMAGETYPE_SONIC;
+    if (r==5) return IP_CONST_DAMAGETYPE_NEGATIVE;
+    if (r==6) return IP_CONST_DAMAGETYPE_DIVINE;
+    return IP_CONST_DAMAGETYPE_POSITIVE;
+}
+
+// NOUVEAU : Types physiques UNIQUEMENT (pour ACBonusVsDmgType)
+int RFB_RandPhysicalDmgTypeOnly()
+{
+    int r = Random(3);
+    if (r==0) return IP_CONST_DAMAGETYPE_PIERCING;
+    if (r==1) return IP_CONST_DAMAGETYPE_SLASHING;
+    return IP_CONST_DAMAGETYPE_BLUDGEONING;
+}
+
+int RFB_RandRace()
+{
+    int r = Random(15);
+    if (r==0) return RACIAL_TYPE_HUMAN;
+    if (r==1) return RACIAL_TYPE_DWARF;
+    if (r==2) return RACIAL_TYPE_ELF;
+    if (r==3) return RACIAL_TYPE_HALFELF;
+    if (r==4) return RACIAL_TYPE_HALFLING;
+    if (r==5) return RACIAL_TYPE_GNOME;
+    if (r==6) return RACIAL_TYPE_HALFORC;
+    if (r==7) return RACIAL_TYPE_HUMANOID_GOBLINOID;
+    if (r==8) return RACIAL_TYPE_HUMANOID_ORC;
+    if (r==9) return RACIAL_TYPE_ABERRATION;
+    if (r==10) return RACIAL_TYPE_ANIMAL;
+    if (r==11) return RACIAL_TYPE_DRAGON;
+    if (r==12) return RACIAL_TYPE_ELEMENTAL;
+    if (r==13) return RACIAL_TYPE_GIANT;
+    return RACIAL_TYPE_UNDEAD;
+}
+
+int RFB_RandAlignGroup()
+{
+    int r = Random(4);
+    if (r==0) return IP_CONST_ALIGNMENTGROUP_LAWFUL;
+    if (r==1) return IP_CONST_ALIGNMENTGROUP_CHAOTIC;
+    if (r==2) return IP_CONST_ALIGNMENTGROUP_GOOD;
+    return IP_CONST_ALIGNMENTGROUP_EVIL;
+}
+
+int RFB_RandSpecificAlign()
+{
+    int r = Random(9);
+    if (r == 0) return IP_CONST_ALIGNMENT_LG;
+    if (r == 1) return IP_CONST_ALIGNMENT_LN;
+    if (r == 2) return IP_CONST_ALIGNMENT_LE;
+    if (r == 3) return IP_CONST_ALIGNMENT_NG;
+    if (r == 4) return IP_CONST_ALIGNMENT_TN;
+    if (r == 5) return IP_CONST_ALIGNMENT_NE;
+    if (r == 6) return IP_CONST_ALIGNMENT_CG;
+    if (r == 7) return IP_CONST_ALIGNMENT_CN;
+    return IP_CONST_ALIGNMENT_CE;
+}
+
+int RFB_RandSkill()
+{
+    int r = Random(24);
+    if (r==0) return SKILL_ANIMAL_EMPATHY;
+    if (r==1) return SKILL_APPRAISE;
+    if (r==2) return SKILL_BLUFF;
+    if (r==3) return SKILL_CONCENTRATION;
+    if (r==4) return SKILL_DISABLE_TRAP;
+    if (r==5) return SKILL_DISCIPLINE;
+    if (r==6) return SKILL_HEAL;
+    if (r==7) return SKILL_HIDE;
+    if (r==8) return SKILL_INTIMIDATE;
+    if (r==9) return SKILL_LISTEN;
+    if (r==10) return SKILL_LORE;
+    if (r==11) return SKILL_MOVE_SILENTLY;
+    if (r==12) return SKILL_OPEN_LOCK;
+    if (r==13) return SKILL_PARRY;
+    if (r==14) return SKILL_PERFORM;
+    if (r==15) return SKILL_PERSUADE;
+    if (r==16) return SKILL_PICK_POCKET;
+    if (r==17) return SKILL_RIDE;
+    if (r==18) return SKILL_SEARCH;
+    if (r==19) return SKILL_SPELLCRAFT;
+    if (r==20) return SKILL_SET_TRAP;
+    if (r==21) return SKILL_SPOT;
+    if (r==22) return SKILL_TAUNT;
+    return SKILL_TUMBLE;
+}
+
+int RFB_RandSpellSchool()
+{
+    int r = Random(8);
+    if (r==0) return IP_CONST_SPELLSCHOOL_ABJURATION;
+    if (r==1) return IP_CONST_SPELLSCHOOL_CONJURATION;
+    if (r==2) return IP_CONST_SPELLSCHOOL_DIVINATION;
+    if (r==3) return IP_CONST_SPELLSCHOOL_ENCHANTMENT;
+    if (r==4) return IP_CONST_SPELLSCHOOL_EVOCATION;
+    if (r==5) return IP_CONST_SPELLSCHOOL_ILLUSION;
+    if (r==6) return IP_CONST_SPELLSCHOOL_NECROMANCY;
+    return IP_CONST_SPELLSCHOOL_TRANSMUTATION;
+}
+
+int RFB_RandOnHitProp()
+{
+    int r = Random(10);
+    if (r==0) return IP_CONST_ONHIT_DAZE;
+    if (r==1) return IP_CONST_ONHIT_SLOW;
+    if (r==2) return IP_CONST_ONHIT_CONFUSION;
+    if (r==3) return IP_CONST_ONHIT_BLINDNESS;
+    if (r==4) return IP_CONST_ONHIT_DOOM;
+    if (r==5) return IP_CONST_ONHIT_FEAR;
+    if (r==6) return IP_CONST_ONHIT_HOLD;
+    if (r==7) return IP_CONST_ONHIT_KNOCK;
+    if (r==8) return IP_CONST_ONHIT_LESSERDISPEL;
+    return IP_CONST_ONHIT_SLEEP;
+}
+
+int RFB_RandAmmoType()
+{
+    int r = Random(9);
+    if (r==0) return IP_CONST_UNLIMITEDAMMO_1D6COLD;
+    if (r==1) return IP_CONST_UNLIMITEDAMMO_1D6FIRE;
+    if (r==2) return IP_CONST_UNLIMITEDAMMO_1D6LIGHT;
+    if (r==3) return IP_CONST_UNLIMITEDAMMO_PLUS1;
+    if (r==4) return IP_CONST_UNLIMITEDAMMO_PLUS2;
+    if (r==5) return IP_CONST_UNLIMITEDAMMO_PLUS3;
+    if (r==6) return IP_CONST_UNLIMITEDAMMO_PLUS4;
+    if (r==7) return IP_CONST_UNLIMITEDAMMO_PLUS5;
+    return IP_CONST_UNLIMITEDAMMO_BASIC;
+}
+
+
+// ======================
+//  CastSpell & OnHit helpers
+// ======================
+int RFB_CastSpell_UsesEnumFromTier(int nTier)
+{
+    if (nTier >= 4) return IP_CONST_CASTSPELL_NUMUSES_3_USES_PER_DAY;
+    if (nTier >= 2) return IP_CONST_CASTSPELL_NUMUSES_2_USES_PER_DAY;
+    return IP_CONST_CASTSPELL_NUMUSES_1_USE_PER_DAY;
+}
+
+int RFB_CastSpellPickFromMaxLevel(int nMaxLevel)
+{
+    int r = Random(10);
+    if (r==0) return IP_CONST_CASTSPELL_FIREBALL_10;
+    if (r==1) return IP_CONST_CASTSPELL_MAGIC_MISSILE_9;
+    if (r==2) return IP_CONST_CASTSPELL_HASTE_10;
+    if (r==3) return IP_CONST_CASTSPELL_BULLS_STRENGTH_10;
+    if (r==4) return IP_CONST_CASTSPELL_CATS_GRACE_10;
+    if (r==5) return IP_CONST_CASTSPELL_ENDURANCE_10;
+    if (r==6) return IP_CONST_CASTSPELL_STONESKIN_7;
+    if (r==7) return IP_CONST_CASTSPELL_TRUE_SEEING_9;
+    if (r==8) return IP_CONST_CASTSPELL_GREATER_DISPELLING_7;
+    return IP_CONST_CASTSPELL_HEAL_11;
+}
+
+int RFB_OnHitPick_ULTRA()
+{
+    int r = Random(5);
+    if (r == 0) return IP_CONST_ONHIT_CASTSPELL_METEOR_SWARM;
+    if (r == 1) return IP_CONST_ONHIT_CASTSPELL_EARTHQUAKE;
+    if (r == 2) return IP_CONST_ONHIT_CASTSPELL_BIGBYS_FORCEFUL_HAND;
+    if (r == 3) return IP_CONST_ONHIT_CASTSPELL_BIGBYS_INTERPOSING_HAND;
+    return IP_CONST_ONHIT_CASTSPELL_DISMISSAL;
+}
+
+int RFB_OnHitPick_HIGH()
+{
+    int r = Random(10);
+    if (r == 0) return IP_CONST_ONHIT_CASTSPELL_ICE_STORM;
+    if (r == 1) return IP_CONST_ONHIT_CASTSPELL_FIRE_STORM;
+    if (r == 2) return IP_CONST_ONHIT_CASTSPELL_CHAIN_LIGHTNING;
+    if (r == 3) return IP_CONST_ONHIT_CASTSPELL_SUNBURST;
+    if (r == 4) return IP_CONST_ONHIT_CASTSPELL_WALL_OF_FIRE;
+    if (r == 5) return IP_CONST_ONHIT_CASTSPELL_FLAME_STRIKE;
+    if (r == 6) return IP_CONST_ONHIT_CASTSPELL_ACID_FOG;
+    if (r == 7) return IP_CONST_ONHIT_CASTSPELL_ENERGY_DRAIN;
+    if (r == 8) return IP_CONST_ONHIT_CASTSPELL_INFERNO;
+    return IP_CONST_ONHIT_CASTSPELL_CALL_LIGHTNING;
+}
+
+int RFB_OnHitPick_NORMAL()
+{
+    int r = Random(18);
+    if (r == 0)  return IP_CONST_ONHIT_CASTSPELL_COMBUST;
+    if (r == 1)  return IP_CONST_ONHIT_CASTSPELL_DISPEL_MAGIC;
+    if (r == 2)  return IP_CONST_ONHIT_CASTSPELL_FIREBALL;
+    if (r == 3)  return IP_CONST_ONHIT_CASTSPELL_FREEZE;
+    if (r == 4)  return IP_CONST_ONHIT_CASTSPELL_GHOUL_TOUCH;
+    if (r == 5)  return IP_CONST_ONHIT_CASTSPELL_HAMMER_OF_THE_GODS;
+    if (r == 6)  return IP_CONST_ONHIT_CASTSPELL_MAGIC_MISSILE;
+    if (r == 7)  return IP_CONST_ONHIT_CASTSPELL_MELFS_ACID_ARROW;
+    if (r == 8)  return IP_CONST_ONHIT_CASTSPELL_SOUND_BURST;
+    if (r == 9)  return IP_CONST_ONHIT_CASTSPELL_SPIKE_GROWTH;
+    if (r == 10) return IP_CONST_ONHIT_CASTSPELL_SILENCE;
+    if (r == 11) return IP_CONST_ONHIT_CASTSPELL_POISON;
+    if (r == 12) return IP_CONST_ONHIT_CASTSPELL_ACID_SPLASH;
+    if (r == 13) return IP_CONST_ONHIT_CASTSPELL_ELECTRIC_JOLT;
+    if (r == 14) return IP_CONST_ONHIT_CASTSPELL_FLAME_LASH;
+    if (r == 15) return IP_CONST_ONHIT_CASTSPELL_FEEBLEMIND;
+    if (r == 16) return IP_CONST_ONHIT_CASTSPELL_DARKNESS;
+    return IP_CONST_ONHIT_CASTSPELL_CONTAGION;
+}
+
+int RFB_OnHitCastSpellPick()
+{
+    int nRoll = Random(100);
+    if (nRoll < RFB_ONHIT_ULTRA_PCT) return RFB_OnHitPick_ULTRA();
+    if (nRoll < (RFB_ONHIT_ULTRA_PCT + RFB_ONHIT_HIGH_PCT)) return RFB_OnHitPick_HIGH();
+    return RFB_OnHitPick_NORMAL();
+}
+
+int RFB_OnHitCastSpellLevelFromTier(int nTier)
+{
+    if (nTier >= 5) return 5;
+    if (nTier >= 4) return 4;
+    if (nTier >= 3) return 3;
+    if (nTier >= 2) return 2;
+    return 1;
+}
+
+int RFB_PickOnHitSaveDC(int nTier)
+{
+    if (nTier <= 1) return IP_CONST_ONHIT_SAVEDC_14;
+    if (nTier == 2) return IP_CONST_ONHIT_SAVEDC_16;
+    if (nTier == 3) return IP_CONST_ONHIT_SAVEDC_18;
+    if (nTier == 4) return IP_CONST_ONHIT_SAVEDC_20;
+    return IP_CONST_ONHIT_SAVEDC_22;
+}
+
+int RFB_PickOnHitDurationEnum(int nTier)
+{
+    if (nTier <= 1) return IP_CONST_ONHIT_DURATION_5_PERCENT_5_ROUNDS;
+    if (nTier == 2) return IP_CONST_ONHIT_DURATION_10_PERCENT_4_ROUNDS;
+    if (nTier == 3) return IP_CONST_ONHIT_DURATION_25_PERCENT_3_ROUNDS;
+    if (nTier == 4) return IP_CONST_ONHIT_DURATION_50_PERCENT_2_ROUNDS;
+    return IP_CONST_ONHIT_DURATION_75_PERCENT_1_ROUND;
+}
+
+int RFB_OnHitSpecialIfNeeded(int nProp, int nTier)
+{
+    if (nProp == IP_CONST_ONHIT_BLINDNESS) return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_CONFUSION) return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_DAZE)      return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_DEAFNESS)  return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_DOOM)      return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_FEAR)      return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_HOLD)      return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_SILENCE)   return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_SLEEP)     return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_SLOW)      return RFB_PickOnHitDurationEnum(nTier);
+    if (nProp == IP_CONST_ONHIT_STUN)      return RFB_PickOnHitDurationEnum(nTier);
+    return 0;
+}
+
+
+// ======================
+//  Bonus Level Spell helpers
+// ======================
+int RFB_RandCasterClass()
+{
+    int r = Random(7);
+    if (r==0) return CLASS_TYPE_WIZARD;
+    if (r==1) return CLASS_TYPE_SORCERER;
+    if (r==2) return CLASS_TYPE_CLERIC;
+    if (r==3) return CLASS_TYPE_DRUID;
+    if (r==4) return CLASS_TYPE_BARD;
+    if (r==5) return CLASS_TYPE_PALADIN;
+    return CLASS_TYPE_RANGER;
+}
+
+int RFB_LevelToBonusLevelSpellEnum(int nMax)
+{
+    if (nMax >= 9) return IP_CONST_SPELLLEVEL_9;
+    if (nMax >= 8) return IP_CONST_SPELLLEVEL_8;
+    if (nMax >= 7) return IP_CONST_SPELLLEVEL_7;
+    if (nMax >= 6) return IP_CONST_SPELLLEVEL_6;
+    if (nMax >= 5) return IP_CONST_SPELLLEVEL_5;
+    if (nMax >= 4) return IP_CONST_SPELLLEVEL_4;
+    if (nMax >= 3) return IP_CONST_SPELLLEVEL_3;
+    if (nMax >= 2) return IP_CONST_SPELLLEVEL_2;
+    if (nMax >= 1) return IP_CONST_SPELLLEVEL_1;
+    return IP_CONST_SPELLLEVEL_0;
+}
+
+
+// ======================
+//  Light helpers
+// ======================
+int RFB_RandLightBrightness()
+{
+    int r = Random(4);
+    if (r==0) return IP_CONST_LIGHTBRIGHTNESS_DIM;
+    if (r==1) return IP_CONST_LIGHTBRIGHTNESS_LOW;
+    if (r==2) return IP_CONST_LIGHTBRIGHTNESS_NORMAL;
+    return IP_CONST_LIGHTBRIGHTNESS_BRIGHT;
+}
+
+int RFB_RandLightColor()
+{
+    int r = Random(8);
+    if (r==0) return IP_CONST_LIGHTCOLOR_BLUE;
+    if (r==1) return IP_CONST_LIGHTCOLOR_GREEN;
+    if (r==2) return IP_CONST_LIGHTCOLOR_RED;
+    if (r==3) return IP_CONST_LIGHTCOLOR_YELLOW;
+    if (r==4) return IP_CONST_LIGHTCOLOR_PURPLE;
+    if (r==5) return IP_CONST_LIGHTCOLOR_WHITE;
+    if (r==6) return IP_CONST_LIGHTCOLOR_ORANGE;
+    return IP_CONST_LIGHTCOLOR_WHITE;
+}
+
+
+// ======================
+//  Bonus Feat
+// ======================
+int RFB_RandBonusFeat()
+{
+    int r = Random(6);
+    if (r==0) return FEAT_ALERTNESS;
+    if (r==1) return FEAT_GREAT_FORTITUDE;
+    if (r==2) return FEAT_IRON_WILL;
+    if (r==3) return FEAT_LIGHTNING_REFLEXES;
+    if (r==4) return FEAT_TOUGHNESS;
+    return FEAT_LUCK_OF_HEROES;
+}
+
+
+// ======================
+//  NOUVEAU : SpellImmunitySpecific (IP_CONST_IMMUNITYSPELL_*)
+// ======================
+int RFB_RandImmunitySpell()
+{
+    int n = Random(115);
+    if (n==0) return IP_CONST_IMMUNITYSPELL_ACID_FOG;
+    if (n==1) return IP_CONST_IMMUNITYSPELL_AID;
+    if (n==2) return IP_CONST_IMMUNITYSPELL_BARKSKIN;
+    if (n==3) return IP_CONST_IMMUNITYSPELL_BESTOW_CURSE;
+    if (n==4) return IP_CONST_IMMUNITYSPELL_BLINDNESS_AND_DEAFNESS;
+    if (n==5) return IP_CONST_IMMUNITYSPELL_BURNING_HANDS;
+    if (n==6) return IP_CONST_IMMUNITYSPELL_CALL_LIGHTNING;
+    if (n==7) return IP_CONST_IMMUNITYSPELL_CHAIN_LIGHTNING;
+    if (n==8) return IP_CONST_IMMUNITYSPELL_CHARM_MONSTER;
+    if (n==9) return IP_CONST_IMMUNITYSPELL_CHARM_PERSON;
+    if (n==10) return IP_CONST_IMMUNITYSPELL_CHARM_PERSON_OR_ANIMAL;
+    if (n==11) return IP_CONST_IMMUNITYSPELL_CIRCLE_OF_DEATH;
+    if (n==12) return IP_CONST_IMMUNITYSPELL_CIRCLE_OF_DOOM;
+    if (n==13) return IP_CONST_IMMUNITYSPELL_CLOUDKILL;
+    if (n==14) return IP_CONST_IMMUNITYSPELL_COLOR_SPRAY;
+    if (n==15) return IP_CONST_IMMUNITYSPELL_CONE_OF_COLD;
+    if (n==16) return IP_CONST_IMMUNITYSPELL_CONFUSION;
+    if (n==17) return IP_CONST_IMMUNITYSPELL_CONTAGION;
+    if (n==18) return IP_CONST_IMMUNITYSPELL_CONTROL_UNDEAD;
+    if (n==19) return IP_CONST_IMMUNITYSPELL_CURE_CRITICAL_WOUNDS;
+    if (n==20) return IP_CONST_IMMUNITYSPELL_CURE_LIGHT_WOUNDS;
+    if (n==21) return IP_CONST_IMMUNITYSPELL_CURE_MINOR_WOUNDS;
+    if (n==22) return IP_CONST_IMMUNITYSPELL_CURE_MODERATE_WOUNDS;
+    if (n==23) return IP_CONST_IMMUNITYSPELL_CURE_SERIOUS_WOUNDS;
+    if (n==24) return IP_CONST_IMMUNITYSPELL_DARKNESS;
+    if (n==25) return IP_CONST_IMMUNITYSPELL_DAZE;
+    if (n==26) return IP_CONST_IMMUNITYSPELL_DEATH_WARD;
+    if (n==27) return IP_CONST_IMMUNITYSPELL_DELAYED_BLAST_FIREBALL;
+    if (n==28) return IP_CONST_IMMUNITYSPELL_DISMISSAL;
+    if (n==29) return IP_CONST_IMMUNITYSPELL_DISPEL_MAGIC;
+    if (n==30) return IP_CONST_IMMUNITYSPELL_DOMINATE_ANIMAL;
+    if (n==31) return IP_CONST_IMMUNITYSPELL_DOMINATE_MONSTER;
+    if (n==32) return IP_CONST_IMMUNITYSPELL_DOMINATE_PERSON;
+    if (n==33) return IP_CONST_IMMUNITYSPELL_DOOM;
+    if (n==34) return IP_CONST_IMMUNITYSPELL_EAGLE_SPLEDOR;
+    if (n==35) return IP_CONST_IMMUNITYSPELL_ENERGY_DRAIN;
+    if (n==36) return IP_CONST_IMMUNITYSPELL_ENERVATION;
+    if (n==37) return IP_CONST_IMMUNITYSPELL_ENTANGLE;
+    if (n==38) return IP_CONST_IMMUNITYSPELL_EVARDS_BLACK_TENTACLES;
+    if (n==39) return IP_CONST_IMMUNITYSPELL_FEAR;
+    if (n==40) return IP_CONST_IMMUNITYSPELL_FEEBLEMIND;
+    if (n==41) return IP_CONST_IMMUNITYSPELL_FIND_TRAPS;
+    if (n==42) return IP_CONST_IMMUNITYSPELL_FINGER_OF_DEATH;
+    if (n==43) return IP_CONST_IMMUNITYSPELL_FIRE_STORM;
+    if (n==44) return IP_CONST_IMMUNITYSPELL_FIREBALL;
+    if (n==45) return IP_CONST_IMMUNITYSPELL_FLAME_ARROW;
+    if (n==46) return IP_CONST_IMMUNITYSPELL_FLAME_LASH;
+    if (n==47) return IP_CONST_IMMUNITYSPELL_FLAME_STRIKE;
+    if (n==48) return IP_CONST_IMMUNITYSPELL_FOXS_CUNNING;
+    if (n==49) return IP_CONST_IMMUNITYSPELL_FREEDOM_OF_MOVEMENT;
+    if (n==50) return IP_CONST_IMMUNITYSPELL_GREASE;
+    if (n==51) return IP_CONST_IMMUNITYSPELL_GREATER_DISPELLING;
+    if (n==52) return IP_CONST_IMMUNITYSPELL_GREATER_SPELL_BREACH;
+    if (n==53) return IP_CONST_IMMUNITYSPELL_HAMMER_OF_THE_GODS;
+    if (n==54) return IP_CONST_IMMUNITYSPELL_HARM;
+    if (n==55) return IP_CONST_IMMUNITYSPELL_HEAL;
+    if (n==56) return IP_CONST_IMMUNITYSPELL_HOLD_ANIMAL;
+    if (n==57) return IP_CONST_IMMUNITYSPELL_HOLD_MONSTER;
+    if (n==58) return IP_CONST_IMMUNITYSPELL_HOLD_PERSON;
+    if (n==59) return IP_CONST_IMMUNITYSPELL_IMPLOSION;
+    if (n==60) return IP_CONST_IMMUNITYSPELL_IMPROVED_INVISIBILITY;
+    if (n==61) return IP_CONST_IMMUNITYSPELL_INCENDIARY_CLOUD;
+    if (n==62) return IP_CONST_IMMUNITYSPELL_INVISIBILITY_PURGE;
+    if (n==63) return IP_CONST_IMMUNITYSPELL_LESSER_DISPEL;
+    if (n==64) return IP_CONST_IMMUNITYSPELL_LESSER_SPELL_BREACH;
+    if (n==65) return IP_CONST_IMMUNITYSPELL_LIGHTNING_BOLT;
+    if (n==66) return IP_CONST_IMMUNITYSPELL_MAGIC_MISSILE;
+    if (n==67) return IP_CONST_IMMUNITYSPELL_MASS_BLINDNESS_AND_DEAFNESS;
+    if (n==68) return IP_CONST_IMMUNITYSPELL_MASS_CHARM;
+    if (n==69) return IP_CONST_IMMUNITYSPELL_MASS_HEAL;
+    if (n==70) return IP_CONST_IMMUNITYSPELL_MELFS_ACID_ARROW;
+    if (n==71) return IP_CONST_IMMUNITYSPELL_METEOR_SWARM;
+    if (n==72) return IP_CONST_IMMUNITYSPELL_MIND_FOG;
+    if (n==73) return IP_CONST_IMMUNITYSPELL_MORDENKAINENS_DISJUNCTION;
+    if (n==74) return IP_CONST_IMMUNITYSPELL_OWLS_WISDOM;
+    if (n==75) return IP_CONST_IMMUNITYSPELL_PHANTASMAL_KILLER;
+    if (n==76) return IP_CONST_IMMUNITYSPELL_POISON;
+    if (n==77) return IP_CONST_IMMUNITYSPELL_POWER_WORD_KILL;
+    if (n==78) return IP_CONST_IMMUNITYSPELL_POWER_WORD_STUN;
+    if (n==79) return IP_CONST_IMMUNITYSPELL_PRISMATIC_SPRAY;
+    if (n==80) return IP_CONST_IMMUNITYSPELL_RAY_OF_ENFEEBLEMENT;
+    if (n==81) return IP_CONST_IMMUNITYSPELL_RAY_OF_FROST;
+    if (n==82) return IP_CONST_IMMUNITYSPELL_SCARE;
+    if (n==83) return IP_CONST_IMMUNITYSPELL_SEARING_LIGHT;
+    if (n==84) return IP_CONST_IMMUNITYSPELL_SHADOW_CONJURATION;
+    if (n==85) return IP_CONST_IMMUNITYSPELL_SILENCE;
+    if (n==86) return IP_CONST_IMMUNITYSPELL_SLAY_LIVING;
+    if (n==87) return IP_CONST_IMMUNITYSPELL_SLEEP;
+    if (n==88) return IP_CONST_IMMUNITYSPELL_SLOW;
+    if (n==89) return IP_CONST_IMMUNITYSPELL_SOUND_BURST;
+    if (n==90) return IP_CONST_IMMUNITYSPELL_STINKING_CLOUD;
+    if (n==91) return IP_CONST_IMMUNITYSPELL_STONESKIN;
+    if (n==92) return IP_CONST_IMMUNITYSPELL_STORM_OF_VENGEANCE;
+    if (n==93) return IP_CONST_IMMUNITYSPELL_SUNBEAM;
+    if (n==94) return IP_CONST_IMMUNITYSPELL_VIRTUE;
+    if (n==95) return IP_CONST_IMMUNITYSPELL_WAIL_OF_THE_BANSHEE;
+    if (n==96) return IP_CONST_IMMUNITYSPELL_WEB;
+    if (n==97) return IP_CONST_IMMUNITYSPELL_WEIRD;
+    if (n==98) return IP_CONST_IMMUNITYSPELL_WORD_OF_FAITH;
+
+    // Sorts puissants (chances réduites)
+    int nRoll = Random(100);
+    if (nRoll < 5) // 5% chance sorts ultra-puissants
+    {
+        int ultra = Random(8);
+        if (ultra==0) return IP_CONST_IMMUNITYSPELL_FINGER_OF_DEATH;
+        if (ultra==1) return IP_CONST_IMMUNITYSPELL_IMPLOSION;
+        if (ultra==2) return IP_CONST_IMMUNITYSPELL_METEOR_SWARM;
+        if (ultra==3) return IP_CONST_IMMUNITYSPELL_POWER_WORD_KILL;
+        if (ultra==4) return IP_CONST_IMMUNITYSPELL_WAIL_OF_THE_BANSHEE;
+        if (ultra==5) return IP_CONST_IMMUNITYSPELL_WEIRD;
+        if (ultra==6) return IP_CONST_IMMUNITYSPELL_ENERGY_DRAIN;
+        return IP_CONST_IMMUNITYSPELL_MORDENKAINENS_DISJUNCTION;
+    }
+
+    return IP_CONST_IMMUNITYSPELL_MAGIC_MISSILE;
+}
+
+
+// ==========================================================================
+//  APPLICATION PRINCIPALE
+// ==========================================================================
+void RFB_ApplyAllBonuses(object oItem, int nTierInput)
+{
+    int nTier = RFB_ClampTier(nTierInput);
+
+    // ==========================================
+    //  AC BONUS
+    // ==========================================
+    do {
+        if (!ENABLE_AC_BONUS) break;
+        if (!RFB_TestChance(CHANCE_AC_BONUS)) break;
+        int nMin=0, nMax=0;
+        if (nTier==1){nMin=0;nMax=1;}
+        else if (nTier==2){nMin=1;nMax=2;}
+        else if (nTier==3){nMin=2;nMax=3;}
+        else if (nTier==4){nMin=4;nMax=5;}
+        else {nMin=6;nMax=7;}
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyACBonus(RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  AC VS ALIGN GROUP
+    // ==========================================
+    do {
+        if (!ENABLE_AC_VS_ALIGN) break;
+        if (!RFB_TestChance(CHANCE_AC_VS_ALIGN)) break;
+        int nMin=1, nMax=2;
+        if (nTier==2){nMin=2;nMax=3;}
+        else if (nTier==3){nMin=3;nMax=4;}
+        else if (nTier==4){nMin=5;nMax=6;}
+        else if (nTier==5){nMin=7;nMax=8;}
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyACBonusVsAlign(RFB_RandAlignGroup(), RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  AC VS DAMAGE TYPE (physique UNIQUEMENT)
+    // ==========================================
+    do {
+        if (!ENABLE_AC_VS_DMG) break;
+        if (!RFB_TestChance(CHANCE_AC_VS_DMG)) break;
+        int nMin=1, nMax=2;
+        if (nTier==2){nMin=2;nMax=3;}
+        else if (nTier==3){nMin=3;nMax=4;}
+        else if (nTier==4){nMin=5;nMax=6;}
+        else if (nTier==5){nMin=7;nMax=8;}
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyACBonusVsDmgType(RFB_RandPhysicalDmgTypeOnly(), RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  AC VS RACE
+    // ==========================================
+    do {
+        if (!ENABLE_AC_VS_RACE) break;
+        if (!RFB_TestChance(CHANCE_AC_VS_RACE)) break;
+        int nMin=1, nMax=2;
+        if (nTier==2){nMin=2;nMax=3;}
+        else if (nTier==3){nMin=3;nMax=4;}
+        else if (nTier==4){nMin=5;nMax=6;}
+        else if (nTier==5){nMin=7;nMax=8;}
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyACBonusVsRace(RFB_RandRace(), RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  AC VS SPECIFIC ALIGNMENT
+    // ==========================================
+    do {
+        if (!ENABLE_AC_VS_SALIGN) break;
+        if (!RFB_TestChance(CHANCE_AC_VS_SALIGN)) break;
+        int nMin=1, nMax=2;
+        if (nTier==2){nMin=2;nMax=3;}
+        else if (nTier==3){nMin=3;nMax=4;}
+        else if (nTier==4){nMin=5;nMax=6;}
+        else if (nTier==5){nMin=7;nMax=8;}
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyACBonusVsSAlign(RFB_RandSpecificAlign(), RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ADDITIONAL (placeholder)
+    // ==========================================
+    do {
+        if (!ENABLE_ADDITIONAL) break;
+        if (!RFB_TestChance(CHANCE_ADDITIONAL)) break;
+        // Placeholder si besoin de tracer
+    } while(FALSE);
+
+    // ==========================================
+    //  ARCANE SPELL FAILURE
+    // ==========================================
+    do {
+        if (!ENABLE_ARCANE_FAIL) break;
+        if (!RFB_TestChance(CHANCE_ARCANE_FAIL)) break;
+        int nMin = 5, nMax = 5;
+        if (nTier == 3) { nMin = 10; nMax = 10; }
+        else if (nTier == 4) { nMin = 10; nMax = 10; }
+        else if (nTier == 5) { nMin = 15; nMax = 25; }
+        int nPct = RFB_StepToEnum5_50(RFB_RandInRange(nMin, nMax));
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyArcaneSpellFailure(RFB_ArcaneFailToEnumSigned(nPct)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ATTACK BONUS
+    // ==========================================
+    do {
+        if (!ENABLE_ATK_BONUS) break;
+        if (!RFB_TestChance(CHANCE_ATK_BONUS)) break;
+        int nMin=0, nMax=1;
+        if (nTier==2){nMin=1;nMax=2;}
+        else if (nTier==3){nMin=2;nMax=3;}
+        else if (nTier==4){nMin=4;nMax=5;}
+        else if (nTier==5){nMin=6;nMax=7;}
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyAttackBonus(RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ATTACK VS ALIGN
+    // ==========================================
+    do {
+        if (!ENABLE_ATK_VS_ALIGN) break;
+        if (!RFB_TestChance(CHANCE_ATK_VS_ALIGN)) break;
+        int nMin=1, nMax=2;
+        if (nTier==2){nMin=2;nMax=3;}
+        else if (nTier==3){nMin=3;nMax=4;}
+        else if (nTier==4){nMin=5;nMax=6;}
+        else if (nTier==5){nMin=7;nMax=8;}
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyAttackBonusVsAlign(RFB_RandAlignGroup(), RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ATTACK VS RACE
+    // ==========================================
+    do {
+        if (!ENABLE_ATK_VS_RACE) break;
+        if (!RFB_TestChance(CHANCE_ATK_VS_RACE)) break;
+        int nMin=1, nMax=2;
+        if (nTier==2){nMin=2;nMax=3;}
+        else if (nTier==3){nMin=3;nMax=4;}
+        else if (nTier==4){nMin=5;nMax=6;}
+        else if (nTier==5){nMin=7;nMax=8;}
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyAttackBonusVsRace(RFB_RandRace(), RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ATTACK VS SPECIFIC ALIGNMENT
+    // ==========================================
+    do {
+        if (!ENABLE_ATK_VS_SALIGN) break;
+        if (!RFB_TestChance(CHANCE_ATK_VS_SALIGN)) break;
+        int nMin=1, nMax=2;
+        if (nTier==2){nMin=2;nMax=3;}
+        else if (nTier==3){nMin=3;nMax=4;}
+        else if (nTier==4){nMin=5;nMax=6;}
+        else if (nTier==5){nMin=7;nMax=8;}
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyAttackBonusVsSAlign(RFB_RandSpecificAlign(), RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ATTACK PENALTY
+    // ==========================================
+    do {
+        if (!ENABLE_ATK_PENALTY) break;
+        if (!RFB_TestChance(CHANCE_ATK_PENALTY)) break;
+        int nMin=0, nMax=1;
+        if (nTier==2){nMin=1;nMax=2;}
+        else if (nTier==3){nMin=2;nMax=3;}
+        else if (nTier==4){nMin=4;nMax=5;}
+        else if (nTier==5){nMin=6;nMax=7;}
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyAttackPenalty(RFB_RandInRange(nMin,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  BONUS FEAT
+    // ==========================================
+    do {
+        if (!ENABLE_BONUS_FEAT) break;
+        if (!RFB_TestChance(CHANCE_BONUS_FEAT)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyBonusFeat(RFB_RandBonusFeat()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  BONUS LEVEL SPELL
+    // ==========================================
+    do {
+        if (!ENABLE_BONUS_LEVEL_SPELL) break;
+        if (!RFB_TestChance(CHANCE_BONUS_LEVEL_SPELL)) break;
+        int nMax=1;
+        if (nTier==2) nMax=2;
+        else if (nTier==3) nMax=3;
+        else if (nTier==4) nMax=4;
+        else if (nTier==5) nMax=5;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyBonusLevelSpell(RFB_RandCasterClass(), RFB_LevelToBonusLevelSpellEnum(nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  BONUS SAVING THROW (base)
+    // ==========================================
+    do {
+        if (!ENABLE_BONUS_SAVE_BASE) break;
+        if (!RFB_TestChance(CHANCE_BONUS_SAVE_BASE)) break;
+        int nMax=1;
+        if (nTier==2) nMax=2;
+        else if (nTier==3) nMax=4;
+        else if (nTier==4) nMax=5;
+        else if (nTier==5) nMax=7;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyBonusSavingThrow(RFB_RandSaveBase(), RFB_RandInRange(1,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  BONUS SAVING THROW VS X
+    // ==========================================
+    do {
+        if (!ENABLE_BONUS_SAVE_VS) break;
+        if (!RFB_TestChance(CHANCE_BONUS_SAVE_VS)) break;
+        int nMax=2;
+        if (nTier==2) nMax=3;
+        else if (nTier==3) nMax=5;
+        else if (nTier==4) nMax=6;
+        else if (nTier==5) nMax=8;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyBonusSavingThrowVsX(RFB_RandSaveVs(), RFB_RandInRange(1,nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  BONUS SPELL RESISTANCE
+    // ==========================================
+    do {
+        if (!ENABLE_BONUS_SR) break;
+        if (!RFB_TestChance(CHANCE_BONUS_SR)) break;
+        int nMax=10;
+        if (nTier==2) nMax=18;
+        else if (nTier==3) nMax=28;
+        else if (nTier==4) nMax=30;
+        else if (nTier==5) nMax=32;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyBonusSpellResistance(RFB_SpellResToEnumMax(nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  CAST SPELL
+    // ==========================================
+    do {
+        if (!ENABLE_CAST_SPELL) break;
+        if (!RFB_TestChance(CHANCE_CAST_SPELL)) break;
+        int nMaxLvl=1;
+        if (nTier==2)nMaxLvl=2;
+        else if (nTier==3)nMaxLvl=5;
+        else if (nTier==4)nMaxLvl=7;
+        else if (nTier==5)nMaxLvl=9;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyCastSpell(RFB_CastSpellPickFromMaxLevel(nMaxLvl),
+                RFB_CastSpell_UsesEnumFromTier(nTier)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  CONTAINER REDUCED WEIGHT
+    // ==========================================
+    do {
+        if (!ENABLE_CONTAINER_REDUCED_WEIGHT) break;
+        if (!RFB_TestChance(CHANCE_CONTAINER_REDUCED_WEIGHT)) break;
+        int nMax=40;
+        if (nTier>=3) nMax=60;
+        if (nTier>=4) nMax=80;
+        if (nTier>=5) nMax=100;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyContainerReducedWeight(RFB_ContainerWeightRedToEnum(RFB_RandInRange(40,nMax))), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE BONUS (détecte 1H vs 2H)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_BONUS) break;
+        if (!RFB_TestChance(CHANCE_DMG_BONUS)) break;
+        if (!RFB_IsMeleeWeapon(oItem)) break;
+
+        int nMaxCum;
+        if (RFB_IsTwoHandedWeapon(oItem))
+        {
+            // Arme 2 mains
+            nMaxCum = 4;
+            if (nTier==2) nMaxCum=12;
+            else if (nTier==3) nMaxCum=22;
+            else if (nTier==4) nMaxCum=40;
+            else if (nTier==5) nMaxCum=52;
+        }
+        else
+        {
+            // Arme 1 main
+            nMaxCum = 2;
+            if (nTier==2) nMaxCum=8;
+            else if (nTier==3) nMaxCum=16;
+            else if (nTier==4) nMaxCum=32;
+            else if (nTier==5) nMaxCum=40;
+        }
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageBonus(RFB_RandDmgType(), RFB_DamageBonusFromMax(nMaxCum)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE BONUS VS ALIGN
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_BONUS_VS_ALIGN) break;
+        if (!RFB_TestChance(CHANCE_DMG_BONUS_VS_ALIGN)) break;
+        int nMax=6;
+        if (nTier==2)nMax=14;
+        else if (nTier==3)nMax=26;
+        else if (nTier==4)nMax=44;
+        else if (nTier==5)nMax=58;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageBonusVsAlign(RFB_RandAlignGroup(), RFB_RandDmgType(),
+                RFB_DamageBonusFromMax(nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE BONUS VS RACE
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_BONUS_VS_RACE) break;
+        if (!RFB_TestChance(CHANCE_DMG_BONUS_VS_RACE)) break;
+        int nMax=6;
+        if (nTier==2)nMax=14;
+        else if (nTier==3)nMax=26;
+        else if (nTier==4)nMax=44;
+        else if (nTier==5)nMax=58;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageBonusVsRace(RFB_RandRace(), RFB_RandDmgType(),
+                RFB_DamageBonusFromMax(nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE BONUS VS SPECIFIC ALIGN
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_BONUS_VS_SALIGN) break;
+        if (!RFB_TestChance(CHANCE_DMG_BONUS_VS_SALIGN)) break;
+        int nMax=6;
+        if (nTier==2)nMax=14;
+        else if (nTier==3)nMax=26;
+        else if (nTier==4)nMax=44;
+        else if (nTier==5)nMax=58;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageBonusVsSAlign(RFB_RandSpecificAlign(), RFB_RandDmgType(),
+                RFB_DamageBonusFromMax(nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE IMMUNITY (plastron)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_IMM_PLASTRON) break;
+        if (!RFB_TestChance(CHANCE_DMG_IMM_PLASTRON)) break;
+        if (!RFB_IsArmor(oItem)) break;
+        int raw=8;
+        if (nTier==2) raw=12;
+        else if (nTier==3) raw=24;
+        else if (nTier==4) raw=36;
+        else if (nTier==5) raw=50;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageImmunity(RFB_RandDmgType(), RFB_ImmPctToEnum(raw)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE IMMUNITY (bijoux)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_IMM_BIJOUX) break;
+        if (!RFB_TestChance(CHANCE_DMG_IMM_BIJOUX)) break;
+        if (!RFB_IsJewelry(oItem)) break;
+        int raw=4;
+        if (nTier==2) raw=8;
+        else if (nTier==3) raw=14;
+        else if (nTier==4) raw=18;
+        else if (nTier==5) raw=24;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageImmunity(RFB_RandDmgType(), RFB_ImmPctToEnum(raw)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE IMMUNITY (autres items)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_IMM_AUTRES) break;
+        if (!RFB_TestChance(CHANCE_DMG_IMM_AUTRES)) break;
+        if (RFB_IsArmor(oItem) || RFB_IsJewelry(oItem)) break;
+        int raw=6;
+        if (nTier==2) raw=10;
+        else if (nTier==3) raw=16;
+        else if (nTier==4) raw=22;
+        else if (nTier==5) raw=28;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageImmunity(RFB_RandDmgType(), RFB_ImmPctToEnum(raw)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE IMMUNITY (par type)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_IMM_PER_TYPE) break;
+        if (!RFB_TestChance(CHANCE_DMG_IMM_PER_TYPE)) break;
+        int raw=6;
+        if (nTier==2) raw=12;
+        else if (nTier==3) raw=20;
+        else if (nTier==4) raw=24;
+        else if (nTier==5) raw=26;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageImmunity(RFB_RandDmgType(), RFB_ImmPctToEnum(raw)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE PENALTY (placeholder - pas d'API vanilla)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_PENALTY) break;
+        if (!RFB_TestChance(CHANCE_DMG_PENALTY)) break;
+        // Pas d'ItemPropertyDamagePenalty dans NWN1
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE REDUCTION (NOUVEAU)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_REDUCTION) break;
+        if (!RFB_TestChance(CHANCE_DMG_REDUCTION)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageReduction(RFB_DmgReductionEnhancement(nTier),
+                RFB_DmgReductionSoak(nTier)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE RESISTANCE (plastron)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_RES_PLASTRON) break;
+        if (!RFB_TestChance(CHANCE_DMG_RES_PLASTRON)) break;
+        if (!RFB_IsArmor(oItem)) break;
+        int nMax=15;
+        if (nTier==2)nMax=20;
+        else if (nTier==3)nMax=25;
+        else if (nTier==4)nMax=30;
+        else if (nTier==5)nMax=45;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageResistance(RFB_RandDmgType(), RFB_StepToResistAmount(nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE RESISTANCE (bijoux)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_RES_BIJOUX) break;
+        if (!RFB_TestChance(CHANCE_DMG_RES_BIJOUX)) break;
+        if (!RFB_IsJewelry(oItem)) break;
+        int nMax=5;
+        if (nTier==2)nMax=10;
+        else if (nTier==3)nMax=15;
+        else if (nTier==4)nMax=20;
+        else if (nTier==5)nMax=25;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageResistance(RFB_RandDmgType(), RFB_StepToResistAmount(nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE RESISTANCE (autres items)
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_RES_AUTRES) break;
+        if (!RFB_TestChance(CHANCE_DMG_RES_AUTRES)) break;
+        if (RFB_IsArmor(oItem) || RFB_IsJewelry(oItem)) break;
+        int nMax=10;
+        if (nTier==2)nMax=15;
+        else if (nTier==3)nMax=20;
+        else if (nTier==4)nMax=25;
+        else if (nTier==5)nMax=35;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageResistance(RFB_RandDmgType(), RFB_StepToResistAmount(nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DAMAGE VULNERABILITY
+    // ==========================================
+    do {
+        if (!ENABLE_DMG_VULN) break;
+        if (!RFB_TestChance(CHANCE_DMG_VULN)) break;
+        int raw=8;
+        if (nTier==2) raw=12;
+        else if (nTier==3) raw=24;
+        else if (nTier==4) raw=36;
+        else if (nTier==5) raw=50;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDamageVulnerability(RFB_RandDmgType(), RFB_VulnPctToEnum(raw)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DARKVISION
+    // ==========================================
+    do {
+        if (!ENABLE_DARKVISION) break;
+        if (!RFB_TestChance(CHANCE_DARKVISION)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyDarkvision(), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DECREASE ABILITY
+    // ==========================================
+    do {
+        if (!ENABLE_DEC_ABILITY) break;
+        if (!RFB_TestChance(CHANCE_DEC_ABILITY)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDecreaseAbility(RFB_RandAbility(), nTier), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  DECREASE AC (pas d'API vanilla)
+    // ==========================================
+    do {
+        if (!ENABLE_DEC_AC) break;
+        if (!RFB_TestChance(CHANCE_DEC_AC)) break;
+        // Pas de ItemPropertyDecreaseAC dans NWN1
+    } while(FALSE);
+
+    // ==========================================
+    //  DECREASE SKILL
+    // ==========================================
+    do {
+        if (!ENABLE_DEC_SKILL) break;
+        if (!RFB_TestChance(CHANCE_DEC_SKILL)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyDecreaseSkill(RFB_RandSkill(), nTier), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ENHANCEMENT BONUS
+    // ==========================================
+    do {
+        if (!ENABLE_ENH_BONUS) break;
+        if (!RFB_TestChance(CHANCE_ENH_BONUS)) break;
+        int nVal=1;
+        if (nTier==2) nVal=3;
+        else if (nTier==3) nVal=5;
+        else if (nTier==4) nVal=6;
+        else if (nTier==5) nVal=7;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyEnhancementBonus(nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ENHANCEMENT VS ALIGN
+    // ==========================================
+    do {
+        if (!ENABLE_ENH_VS_ALIGN) break;
+        if (!RFB_TestChance(CHANCE_ENH_VS_ALIGN)) break;
+        int nVal=2;
+        if (nTier==2) nVal=4;
+        else if (nTier==3) nVal=6;
+        else if (nTier==4) nVal=7;
+        else if (nTier==5) nVal=8;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyEnhancementBonusVsAlign(RFB_RandAlignGroup(), nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ENHANCEMENT VS RACE
+    // ==========================================
+    do {
+        if (!ENABLE_ENH_VS_RACE) break;
+        if (!RFB_TestChance(CHANCE_ENH_VS_RACE)) break;
+        int nVal=3;
+        if (nTier==2) nVal=5;
+        else if (nTier==3) nVal=7;
+        else if (nTier==4) nVal=8;
+        else if (nTier==5) nVal=9;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyEnhancementBonusVsRace(RFB_RandRace(), nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ENHANCEMENT PENALTY
+    // ==========================================
+    do {
+        if (!ENABLE_ENH_PENALTY) break;
+        if (!RFB_TestChance(CHANCE_ENH_PENALTY)) break;
+        int nVal=1;
+        if (nTier==2) nVal=3;
+        else if (nTier==3) nVal=5;
+        else if (nTier==4) nVal=6;
+        else if (nTier==5) nVal=7;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyEnhancementPenalty(nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  EXTRA MELEE DAMAGE TYPE (physique)
+    // ==========================================
+    do {
+        if (!ENABLE_EXTRA_MELEE_DMGTYPE) break;
+        if (!RFB_TestChance(CHANCE_EXTRA_MELEE_DMGTYPE)) break;
+        if (!RFB_IsMeleeWeapon(oItem)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyExtraMeleeDamageType(RFB_RandPhysicalDmgTypeOnly()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  EXTRA RANGE DAMAGE TYPE (physique)
+    // ==========================================
+    do {
+        if (!ENABLE_EXTRA_RANGE_DMGTYPE) break;
+        if (!RFB_TestChance(CHANCE_EXTRA_RANGE_DMGTYPE)) break;
+        if (!RFB_IsRangedWeapon(oItem)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyExtraRangeDamageType(RFB_RandPhysicalDmgTypeOnly()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  FREE ACTION (à partir de Rare)
+    // ==========================================
+    do {
+        if (!ENABLE_FREE_ACTION) break;
+        if (nTier < RF_RARITY_RARE) break;
+        if (!RFB_TestChance(CHANCE_FREE_ACTION)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyFreeAction(), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  HASTE (à partir d'Inhabituel)
+    // ==========================================
+    do {
+        if (!ENABLE_HASTE) break;
+        if (nTier < RF_RARITY_INHABITUEL) break;
+        if (!RFB_TestChance(CHANCE_HASTE)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyHaste(), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  HEALERS KIT
+    // ==========================================
+    do {
+        if (!ENABLE_HEALERS_KIT) break;
+        if (!RFB_TestChance(CHANCE_HEALERS_KIT)) break;
+        int nMod = RFB_RandInRange(1, 12);
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyHealersKit(nMod), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  HOLY AVENGER (à partir d'Inhabituel)
+    // ==========================================
+    do {
+        if (!ENABLE_HOLY_AVENGER) break;
+        if (nTier < RF_RARITY_INHABITUEL) break;
+        if (!RFB_TestChance(CHANCE_HOLY_AVENGER)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyHolyAvenger(), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  IMMUNITY MISC
+    // ==========================================
+    do {
+        if (!ENABLE_IMMUNITY_MISC) break;
+        if (!RFB_TestChance(CHANCE_IMMUNITY_MISC)) break;
+
+        int choice = Random(6);
+        int nImm;
+        if (choice==0) nImm = IP_CONST_IMMUNITYMISC_MINDSPELLS;
+        else if (choice==1) nImm = IP_CONST_IMMUNITYMISC_PARALYSIS;
+        else if (choice==2) nImm = IP_CONST_IMMUNITYMISC_FEAR;
+        else if (choice==3) nImm = IP_CONST_IMMUNITYMISC_POISON;
+        else if (choice==4) nImm = IP_CONST_IMMUNITYMISC_DISEASE;
+        else nImm = IP_CONST_IMMUNITYMISC_LEVEL_ABIL_DRAIN;
+
+        // Chance ultra-rare pour Critical/Backstab/Knockdown
+        if (RFB_TestChance(CHANCE_IMM_CRIT_BACKSTAB_INTERNAL))
+        {
+            int r2 = Random(3);
+            if (r2==0) nImm = IP_CONST_IMMUNITYMISC_CRITICAL_HITS;
+            else if (r2==1) nImm = IP_CONST_IMMUNITYMISC_BACKSTAB;
+            else nImm = IP_CONST_IMMUNITYMISC_KNOCKDOWN;
+        }
+
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyImmunityMisc(nImm), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  IMMUNITY TO SPELL LEVEL
+    // ==========================================
+    do {
+        if (!ENABLE_IMM_TO_SPELL_LEVEL) break;
+        if (!RFB_TestChance(CHANCE_IMM_TO_SPELL_LEVEL)) break;
+        int nLvl=1;
+        if (nTier==2) nLvl=2;
+        else if (nTier==3) nLvl=3;
+        else if (nTier==4) nLvl=4;
+        else if (nTier==5) nLvl=5;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyImmunityToSpellLevel(nLvl), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  IMPROVED EVASION (à partir d'Inhabituel)
+    // ==========================================
+    do {
+        if (!ENABLE_IMPROVED_EVASION) break;
+        if (nTier < RF_RARITY_INHABITUEL) break;
+        if (!RFB_TestChance(CHANCE_IMPROVED_EVASION)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyImprovedEvasion(), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  KEEN
+    // ==========================================
+    do {
+        if (!ENABLE_KEEN) break;
+        if (!RFB_TestChance(CHANCE_KEEN)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyKeen(), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  LIGHT
+    // ==========================================
+    do {
+        if (!ENABLE_LIGHT) break;
+        if (!RFB_TestChance(CHANCE_LIGHT)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyLight(RFB_RandLightBrightness(), RFB_RandLightColor()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  LIMIT USE BY ALIGN (à partir d'Inhabituel)
+    // ==========================================
+    do {
+        if (!ENABLE_LIMIT_BY_ALIGN) break;
+        if (nTier < RF_RARITY_INHABITUEL) break;
+        if (!RFB_TestChance(CHANCE_LIMIT_BY_ALIGN)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyLimitUseByAlign(RFB_RandAlignGroup()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  LIMIT USE BY CLASS (à partir d'Inhabituel)
+    // ==========================================
+    do {
+        if (!ENABLE_LIMIT_BY_CLASS) break;
+        if (nTier < RF_RARITY_INHABITUEL) break;
+        if (!RFB_TestChance(CHANCE_LIMIT_BY_CLASS)) break;
+        // Choisir une classe aléatoire
+        int nClass = Random(11);
+        int nClassConst = CLASS_TYPE_BARBARIAN;
+        if (nClass==0) nClassConst = CLASS_TYPE_BARBARIAN;
+        else if (nClass==1) nClassConst = CLASS_TYPE_BARD;
+        else if (nClass==2) nClassConst = CLASS_TYPE_CLERIC;
+        else if (nClass==3) nClassConst = CLASS_TYPE_DRUID;
+        else if (nClass==4) nClassConst = CLASS_TYPE_FIGHTER;
+        else if (nClass==5) nClassConst = CLASS_TYPE_MONK;
+        else if (nClass==6) nClassConst = CLASS_TYPE_PALADIN;
+        else if (nClass==7) nClassConst = CLASS_TYPE_RANGER;
+        else if (nClass==8) nClassConst = CLASS_TYPE_ROGUE;
+        else if (nClass==9) nClassConst = CLASS_TYPE_SORCERER;
+        else nClassConst = CLASS_TYPE_WIZARD;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyLimitUseByClass(nClassConst), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  LIMIT USE BY RACE (à partir d'Inhabituel)
+    // ==========================================
+    do {
+        if (!ENABLE_LIMIT_BY_RACE) break;
+        if (nTier < RF_RARITY_INHABITUEL) break;
+        if (!RFB_TestChance(CHANCE_LIMIT_BY_RACE)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyLimitUseByRace(RFB_RandRace()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  LIMIT USE BY SPECIFIC ALIGN
+    // ==========================================
+    do {
+        if (!ENABLE_LIMIT_BY_SALIGN) break;
+        if (!RFB_TestChance(CHANCE_LIMIT_BY_SALIGN)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyLimitUseBySAlign(RFB_RandSpecificAlign()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  MASSIVE CRITICAL
+    // ==========================================
+    do {
+        if (!ENABLE_MASSIVE_CRITICAL) break;
+        if (!RFB_TestChance(CHANCE_MASSIVE_CRITICAL)) break;
+        int nMax=6;
+        if (nTier==2)nMax=14;
+        else if (nTier==3)nMax=26;
+        else if (nTier==4)nMax=44;
+        else if (nTier==5)nMax=58;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyMassiveCritical(RFB_MassiveCritFromMax(nMax)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  MAX RANGE STR MOD (arme distance uniquement)
+    // ==========================================
+    do {
+        if (!ENABLE_MAX_RANGE_STR_MOD) break;
+        if (!RFB_TestChance(CHANCE_MAX_RANGE_STR_MOD)) break;
+        if (!RFB_IsRangedWeapon(oItem)) break;
+        int nVal=2;
+        if (nTier==2)nVal=3;
+        else if (nTier==3)nVal=4;
+        else if (nTier==4)nVal=5;
+        else if (nTier==5)nVal=7;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyMaxRangeStrengthMod(nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  NO DAMAGE
+    // ==========================================
+    do {
+        if (!ENABLE_NO_DAMAGE) break;
+        if (!RFB_TestChance(CHANCE_NO_DAMAGE)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyNoDamage(), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ONHIT CASTSPELL (à partir de Rare)
+    // ==========================================
+    do {
+        if (!ENABLE_ONHIT_CASTSPELL) break;
+        if (nTier < RF_RARITY_RARE) break;
+        if (!RFB_TestChance(CHANCE_ONHIT_CASTSPELL)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyOnHitCastSpell(RFB_OnHitCastSpellPick(),
+                RFB_OnHitCastSpellLevelFromTier(nTier)), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  ONHIT PROPS (à partir d'Inhabituel)
+    // ==========================================
+    do {
+        if (!ENABLE_ONHIT_PROPS) break;
+        if (nTier < RF_RARITY_INHABITUEL) break;
+        if (!RFB_TestChance(CHANCE_ONHIT_PROPS)) break;
+        int nProp  = RFB_RandOnHitProp();
+        int nSave  = RFB_PickOnHitSaveDC(nTier);
+        int nSpec  = RFB_OnHitSpecialIfNeeded(nProp, nTier);
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyOnHitProps(nProp, nSave, nSpec), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  REDUCED SAVING THROW (base)
+    // ==========================================
+    do {
+        if (!ENABLE_REDUCED_SAVE_BASE) break;
+        if (!RFB_TestChance(CHANCE_REDUCED_SAVE_BASE)) break;
+        int nVal=1;
+        if (nTier==2)nVal=2;
+        else if (nTier==3)nVal=3;
+        else if (nTier==4)nVal=4;
+        else if (nTier==5)nVal=6;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyReducedSavingThrow(RFB_RandSaveBase(), nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  REDUCED SAVING THROW VS X
+    // ==========================================
+    do {
+        if (!ENABLE_REDUCED_SAVE_VS) break;
+        if (!RFB_TestChance(CHANCE_REDUCED_SAVE_VS)) break;
+        int nVal=2;
+        if (nTier==2)nVal=4;
+        else if (nTier==3)nVal=6;
+        else if (nTier==4)nVal=8;
+        else if (nTier==5)nVal=10;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyReducedSavingThrowVsX(RFB_RandSaveVs(), nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  REGENERATION
+    // ==========================================
+    do {
+        if (!ENABLE_REGEN) break;
+        if (!RFB_TestChance(CHANCE_REGEN)) break;
+        int nVal=1;
+        if (nTier==2)nVal=2;
+        else if (nTier==3)nVal=4;
+        else if (nTier==4)nVal=6;
+        else if (nTier==5)nVal=8;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyRegeneration(nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  SKILL BONUS
+    // ==========================================
+    do {
+        if (!ENABLE_SKILL_BONUS) break;
+        if (!RFB_TestChance(CHANCE_SKILL_BONUS)) break;
+        int nVal=2;
+        if (nTier==2)nVal=4;
+        else if (nTier==3)nVal=6;
+        else if (nTier==4)nVal=8;
+        else if (nTier==5)nVal=10;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertySkillBonus(RFB_RandSkill(), nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  SPECIAL WALK
+    // ==========================================
+    do {
+        if (!ENABLE_SPECIAL_WALK) break;
+        if (!RFB_TestChance(CHANCE_SPECIAL_WALK)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertySpecialWalk(), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  SPELL IMMUNITY SCHOOL (Épique+ uniquement)
+    // ==========================================
+    do {
+        if (!ENABLE_SPELL_IMM_SCHOOL) break;
+        if (nTier < RF_RARITY_EPIQUE) break;
+        if (!RFB_TestChance(CHANCE_SPELL_IMM_SCHOOL)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertySpellImmunitySchool(RFB_RandSpellSchool()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  SPELL IMMUNITY SPECIFIC (Inhabituel+)
+    // ==========================================
+    do {
+        if (!ENABLE_SPELL_IMM_SPECIFIC) break;
+        if (nTier < RF_RARITY_INHABITUEL) break;
+        if (!RFB_TestChance(CHANCE_SPELL_IMM_SPECIFIC)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertySpellImmunitySpecific(RFB_RandImmunitySpell()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  TRUE SEEING (Épique+ uniquement)
+    // ==========================================
+    do {
+        if (!ENABLE_TRUE_SEEING) break;
+        if (nTier < RF_RARITY_EPIQUE) break;
+        if (!RFB_TestChance(CHANCE_TRUE_SEEING)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyTrueSeeing(), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  TURN RESISTANCE
+    // ==========================================
+    do {
+        if (!ENABLE_TURN_RESIST) break;
+        if (!RFB_TestChance(CHANCE_TURN_RESIST)) break;
+        int nVal=2;
+        if (nTier==2) nVal=3;
+        else if (nTier==3) nVal=4;
+        else if (nTier==4) nVal=5;
+        else if (nTier==5) nVal=6;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyTurnResistance(nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  UNLIMITED AMMO (Rare+, arme distance uniquement)
+    // ==========================================
+    do {
+        if (!ENABLE_UNLIMITED_AMMO) break;
+        if (nTier < RF_RARITY_RARE) break;
+        if (!RFB_TestChance(CHANCE_UNLIMITED_AMMO)) break;
+        if (!RFB_IsRangedWeapon(oItem)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyUnlimitedAmmo(RFB_RandAmmoType()), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  VAMPIRIC REGENERATION (arme mêlée uniquement)
+    // ==========================================
+    do {
+        if (!ENABLE_VAMP_REGEN_MELEE) break;
+        if (!RFB_TestChance(CHANCE_VAMP_REGEN_MELEE)) break;
+        if (!RFB_IsMeleeWeapon(oItem)) break;
+        int nVal=1;
+        if (nTier==2)nVal=2;
+        else if (nTier==3)nVal=4;
+        else if (nTier==4)nVal=6;
+        else if (nTier==5)nVal=8;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyVampiricRegeneration(nVal), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  WEIGHT INCREASE
+    // ==========================================
+    do {
+        if (!ENABLE_WEIGHT_INCREASE) break;
+        if (!RFB_TestChance(CHANCE_WEIGHT_INCREASE)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyWeightIncrease(60), oItem);
+    } while(FALSE);
+
+    // ==========================================
+    //  WEIGHT REDUCTION
+    // ==========================================
+    do {
+        if (!ENABLE_WEIGHT_REDUCTION) break;
+        if (!RFB_TestChance(CHANCE_WEIGHT_REDUCTION)) break;
+        AddItemProperty(DURATION_TYPE_PERMANENT,
+            ItemPropertyWeightReduction(RFB_WeightReductionToEnum(60)), oItem);
+    } while(FALSE);
+}
+
+
+
+
