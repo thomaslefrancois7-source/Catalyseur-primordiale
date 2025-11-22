@@ -1,3 +1,32 @@
+#include "degatbonus_inc"
+#include "immu_degat_lant" // conversions ImmunityPct<->Value + helpers
+
+// -- Prototypes (Vs functions updated with nDmgType) --
+int RFB_AddDmgBonusIdx(object oIt, int nDmgType, int nIdx, int nDur);
+
+int RFB_RandDmgType();
+int RFB_AddDmgBonusIdx_VsAlign(object oIt, int nAlignGroup, int nDmgType, int nIdx, int nDur);
+int RFB_AddDmgBonusIdx_VsRace(object oIt, int nRace, int nDmgType, int nIdx, int nDur);
+int RFB_AddDmgBonusIdx_VsSAlign(object oIt, int nGoodEvil, int nLawChaos, int nDmgType, int nIdx, int nDur);
+
+int RFB_DB_TotalFromIdx(int nIdx);
+int RFB_DB_IsDiceIdx(int nIdx);
+int RFB_RollTargetFromCap(int nCap);
+int RFB_SelectDiceIdxNear(int nTarget, int nTolLo, int nTolHi);
+int RFB_SelectDiceIdxForCap(int nCap);
+int Cap_DB_1H(int nRarity);
+int Cap_DB_2H(int nRarity);
+int Cap_DB_Vs(int nRarity);
+int RFB_SelectIdx_DB_Base(int nRarity, int bTwoHand);
+int RFB_SelectIdx_DB_VsGeneric(int nRarity);
+int RFB_AddDmgBonusIdx_VsAlign(object oIt, int nAlignGroup, int nDmgType, int nIdx, int nDur);
+int RFB_AddDmgBonusIdx_VsRace(object oIt, int nRace, int nDmgType, int nIdx, int nDur);
+int RFB_AddDmgBonusIdx_VsSAlign(object oIt, int nGoodEvil, int nLawChaos, int nDmgType, int nIdx, int nDur);
+int RFB_AddDamageBonusVsAlignCapped(object oIt, int nRarity, int nAlignGroup, int nDur);
+int RFB_AddDamageBonusVsRaceCapped(object oIt, int nRarity, int nRace, int nDur);
+int RFB_AddDamageBonusVsSAlignCapped(object oIt, int nRarity, int nGoodEvil, int nLawChaos, int nDur);
+
+
 // randforge_bonus.nss
 // ==========================================================================
 //  Applique des ItemProperty selon le cahier des charges (rareté 1..5).
@@ -203,15 +232,9 @@ int RFB_ArcaneFailToEnumSigned(int nPct)
 
 int RFB_ImmPctToEnum(int nPct)
 {
-    if (nPct >= 100) return IP_CONST_DAMAGEIMMUNITY_100_PERCENT;
-    if (nPct >= 90)  return IP_CONST_DAMAGEIMMUNITY_90_PERCENT;
-    if (nPct >= 75)  return IP_CONST_DAMAGEIMMUNITY_75_PERCENT;
-    if (nPct >= 50)  return IP_CONST_DAMAGEIMMUNITY_50_PERCENT;
-    if (nPct >= 25)  return IP_CONST_DAMAGEIMMUNITY_25_PERCENT;
-    if (nPct >= 10)  return IP_CONST_DAMAGEIMMUNITY_10_PERCENT;
-    if (nPct >= 5)   return IP_CONST_DAMAGEIMMUNITY_5_PERCENT;
-    return IP_CONST_DAMAGEIMMUNITY_5_PERCENT;
+    return ImmunityPctToValue(nPct);
 }
+
 
 int RFB_VulnPctToEnum(int nPct)
 {
@@ -892,11 +915,822 @@ int RFB_RandImmunitySpell()
 
 
 // ==========================================================================
-//  APPLICATION PRINCIPALE
+
 // ==========================================================================
+
+// Toggle: scanner les IP déjà présentes (NWN ne supporte pas #ifdef)
+const int RFB_SCAN_EXISTING_IPS = TRUE;
+
+//  CAPS CUMULES — DamageBonus/MassCrit, Immunity, Resistance, Vulnerability
+//  - Sans tableaux [], sans déclaration dans les for()
+//  - Locaux cumulés sur l'item: rf_sum_* (+ par type pour immu/resist)
+//  - Wrappers *Capped(...) qui posent/ajustent ou refusent l'IP
+//  - Post-traitement RFB_EnforceCaps(...) pour normaliser si besoin
+//  - Option: scanner les IP déjà présentes (RFB_SCAN_EXISTING_IPS)
+// ==========================================================================
+// ------------------------------
+//  Helpers: rareté -> caps
+//  (Remplace par les valeurs exactes de ton cahier des charges si besoin)
+// ------------------------------
+
+// DAMAGE BONUS total (équivalents de dés: 1d4=4, 2d6=12, etc.)
+int Cap_DamageBonus_Total_1H(int nRarity){
+    if (nRarity<=1) return 10;
+    if (nRarity==2) return 18;
+    if (nRarity==3) return 30;
+    if (nRarity==4) return 44;
+    return 58;
+}
+int Cap_DamageBonus_Total_2H(int nRarity){
+    if (nRarity<=1) return 14;
+    if (nRarity==2) return 26;
+    if (nRarity==3) return 40;
+    if (nRarity==4) return 58;
+    return 72;
+}
+int Cap_MassCrit_Total(int nRarity){
+    if (nRarity<=1) return 6;
+    if (nRarity==2) return 12;
+    if (nRarity==3) return 18;
+    if (nRarity==4) return 24;
+    return 30;
+}
+
+// VULNERABILITY: max cumulé tout type (%)
+int Cap_Vuln_Total(int nRarity){
+    if (nRarity<=1) return 8;
+    if (nRarity==2) return 12;
+    if (nRarity==3) return 24;
+    if (nRarity==4) return 36;
+    return 50;
+}
+
+// RESISTANCE: max par type tous items (+X) et total par catégorie
+int Cap_Resist_PerType_AllItems(int nRarity){
+    if (nRarity<=1) return 5;
+    if (nRarity==2) return 10;
+    if (nRarity==3) return 15;
+    if (nRarity==4) return 20;
+    return 25;
+}
+int Cap_Resist_Total_Plastron(int nRarity){
+    if (nRarity<=1) return 30;
+    if (nRarity==2) return 50;
+    if (nRarity==3) return 70;
+    if (nRarity==4) return 90;
+    return 110;
+}
+int Cap_Resist_Total_Bijoux(int nRarity){
+    if (nRarity<=1) return 15;
+    if (nRarity==2) return 25;
+    if (nRarity==3) return 35;
+    if (nRarity==4) return 45;
+    return 55;
+}
+int Cap_Resist_Total_Autres(int nRarity){
+    if (nRarity<=1) return 10;
+    if (nRarity==2) return 20;
+    if (nRarity==3) return 30;
+    if (nRarity==4) return 40;
+    return 50;
+}
+
+// IMMUNITY: max par type (%) et total par catégorie
+int Cap_Immu_PerType_AllItems(int nRarity){
+    if (nRarity<=1) return 6;
+    if (nRarity==2) return 12;
+    if (nRarity==3) return 20;
+    if (nRarity==4) return 24;
+    return 26;
+}
+int Cap_Immu_Total_Plastron(int nRarity){
+    if (nRarity<=1) return 8;
+    if (nRarity==2) return 12;
+    if (nRarity==3) return 24;
+    if (nRarity==4) return 36;
+    return 50;
+}
+int Cap_Immu_Total_Bijoux(int nRarity){
+    if (nRarity<=1) return 6;
+    if (nRarity==2) return 10;
+    if (nRarity==3) return 16;
+    if (nRarity==4) return 22;
+    return 28;
+}
+int Cap_Immu_Total_Autres(int nRarity){
+    if (nRarity<=1) return 6;
+    if (nRarity==2) return 10;
+    if (nRarity==3) return 16;
+    if (nRarity==4) return 22;
+    return 28;
+}
+
+// Catégories d'objets
+int RFB_IsPlastron(object oIt){ return (GetBaseItemType(oIt) == BASE_ITEM_ARMOR); }
+
+int RFB_IsAutresCat(object oIt){ if (RFB_IsPlastron(oIt)) return FALSE; if (RFB_IsJewelry(oIt)) return FALSE; return TRUE; }
+
+string _Key(string sBase, int nType){ return sBase + IntToString(nType); }
+
+// Equivalences pour cumuls
+int _EquivDamageBonusFromIdx(int nIdx)
+{
+    int X; int Y;
+    // d4
+    if (nIdx >= 31 && nIdx <= 38)  { X = nIdx - 28;  Y = 4;  return (12 * X * (Y + 1)) / 7; } // 3..10d4
+    if (nIdx >= 134 && nIdx <= 143){ X = nIdx - 123; Y = 4;  return (12 * X * (Y + 1)) / 7; } // 11..20d4
+    // d6
+    if (nIdx >= 39 && nIdx <= 51)  { X = nIdx - 36;  Y = 6;  return (12 * X * (Y + 1)) / 7; } // 3..15d6
+    if (nIdx >= 144 && nIdx <= 148){ X = nIdx - 128; Y = 6;  return (12 * X * (Y + 1)) / 7; } // 16..20d6
+    // d8
+    if (nIdx >= 52 && nIdx <= 64)  { X = nIdx - 49;  Y = 8;  return (12 * X * (Y + 1)) / 7; } // 3..15d8
+    if (nIdx >= 149 && nIdx <= 153){ X = nIdx - 133; Y = 8;  return (12 * X * (Y + 1)) / 7; } // 16..20d8
+    // d10
+    if (nIdx >= 65 && nIdx <= 77)  { X = nIdx - 62;  Y = 10; return (12 * X * (Y + 1)) / 7; } // 3..15d10
+    if (nIdx >= 154 && nIdx <= 158){ X = nIdx - 138; Y = 10; return (12 * X * (Y + 1)) / 7; } // 16..20d10
+    // d12
+    if (nIdx >= 78 && nIdx <= 85)  { X = nIdx - 75;  Y = 12; return (12 * X * (Y + 1)) / 7; } // 3..10d12
+    if (nIdx >= 124 && nIdx <= 133){ X = nIdx - 113; Y = 12; return (12 * X * (Y + 1)) / 7; } // 11..20d12
+    // d20
+    if (nIdx >= 86 && nIdx <= 123) { X = nIdx - 83;  Y = 20; return (12 * X * (Y + 1)) / 7; } // 3..40d20
+
+    // +fixes
+    if (nIdx >= 21 && nIdx <= 30)  { X = nIdx - 10; return 6 * X; } // +11..+20
+    if (nIdx >= 1  && nIdx <= 10)  { X = nIdx;      return 6 * X; } // +1..+10
+
+    return 0;
+}
+int _EquivMassCritFromIdx(int nIdx)
+{
+    // Massive Critical utilise la même CostTable (iprp_damagecost) que Damage Bonus.
+    // Donc mêmes équivalences.
+    return _EquivDamageBonusFromIdx(nIdx);
+}
+
+
+// ---- Helpers dés étendus (cohérents avec degatbonus_inc) ----
+int RFB_DB_DieKind(int nIdx)
+{
+    if ((nIdx >= 31 && nIdx <= 38) || (nIdx >= 134 && nIdx <= 143)) return 4;
+    if ((nIdx >= 39 && nIdx <= 51) || (nIdx >= 144 && nIdx <= 148)) return 6;
+    if ((nIdx >= 52 && nIdx <= 64) || (nIdx >= 149 && nIdx <= 153)) return 8;
+    if ((nIdx >= 65 && nIdx <= 77) || (nIdx >= 154 && nIdx <= 158)) return 10;
+    if ((nIdx >= 78 && nIdx <= 85) || (nIdx >= 124 && nIdx <= 133)) return 12;
+    if (nIdx >= 86 && nIdx <= 123) return 20;
+    return 0;
+}
+int RFB_DB_FixedFromIdx(int nIdx)
+{
+    if (nIdx >= 1 && nIdx <= 10) return nIdx;
+    if (nIdx >= 11 && nIdx <= 20) return nIdx - 10;
+    return 0;
+}
+int RFB_DB_DieCount(int nIdx)
+{
+    if (nIdx >= 31 && nIdx <= 38)  return nIdx - 28;   // d4: 3..10
+    if (nIdx >= 134 && nIdx <= 143) return nIdx - 123; // d4: 11..20
+    if (nIdx >= 39 && nIdx <= 51)  return nIdx - 36;   // d6: 3..15
+    if (nIdx >= 144 && nIdx <= 148) return nIdx - 128; // d6: 16..20
+    if (nIdx >= 52 && nIdx <= 64)  return nIdx - 49;   // d8: 3..15
+    if (nIdx >= 149 && nIdx <= 153) return nIdx - 133; // d8: 16..20
+    if (nIdx >= 65 && nIdx <= 77)  return nIdx - 62;   // d10: 3..15
+    if (nIdx >= 154 && nIdx <= 158) return nIdx - 138; // d10: 16..20
+    if (nIdx >= 78 && nIdx <= 85)  return nIdx - 75;   // d12: 3..10
+    if (nIdx >= 124 && nIdx <= 133) return nIdx - 113; // d12: 11..20
+    if (nIdx >= 86 && nIdx <= 123) return nIdx - 83;   // d20: 3..40
+    return 0;
+}
+int RFB_DB_IdxFor(int nDie, int nCount)
+{
+    if (nDie == 4){
+        if (nCount >= 3 && nCount <= 10)  return 28 + nCount;    // 31..38
+        if (nCount >= 11 && nCount <= 20) return 123 + nCount;   // 134..143
+        return 0;
+    }
+    if (nDie == 6){
+        if (nCount >= 3 && nCount <= 15)  return 36 + nCount;    // 39..51
+        if (nCount >= 16 && nCount <= 20) return 128 + nCount;   // 144..148
+        return 0;
+    }
+    if (nDie == 8){
+        if (nCount >= 3 && nCount <= 15)  return 49 + nCount;    // 52..64
+        if (nCount >= 16 && nCount <= 20) return 133 + nCount;   // 149..153
+        return 0;
+    }
+    if (nDie == 10){
+        if (nCount >= 3 && nCount <= 15)  return 62 + nCount;    // 65..77
+        if (nCount >= 16 && nCount <= 20) return 138 + nCount;   // 154..158
+        return 0;
+    }
+    if (nDie == 12){
+        if (nCount >= 3 && nCount <= 10)  return 75 + nCount;    // 78..85
+        if (nCount >= 11 && nCount <= 20) return 113 + nCount;   // 124..133
+        return 0;
+    }
+    if (nDie == 20){
+        if (nCount >= 3 && nCount <= 40)  return 83 + nCount;    // 86..123
+        return 0;
+    }
+    return 0;
+}
+int RFB_DB_IdxForFixedBonus(int nPlus)
+{
+    if (nPlus >= 1 && nPlus <= 10) return nPlus;       // 1..10
+    if (nPlus >= 11 && nPlus <= 20) return 10 + nPlus; // 21..30
+    return 0;
+}
+int RFB_DB_PrevIdxSameFamily(int nIdx)
+{
+    int die = RFB_DB_DieKind(nIdx);
+    if (die == 0)
+    {
+        int plus = RFB_DB_FixedFromIdx(nIdx);
+        if (plus > 1) return RFB_DB_IdxForFixedBonus(plus - 1);
+        return 0;
+    }
+    int cnt = RFB_DB_DieCount(nIdx);
+    if (cnt > 3) return RFB_DB_IdxFor(die, cnt - 1);
+    return 0;
+}
+
+
+
+// ============================================================================
+// Conversions Immunité (index <-> pourcentage) via l'include immu_degat_lant
+// ============================================================================
+int _PercentFromImmunityIdx(int nIdx)
+{
+    // nIdx = CostTableValue pour ItemPropertyDamageImmunity
+    // Retourne le % réel (1..100) en utilisant le mapping custom de l'include
+    return ImmunityValueToPct(nIdx);
+}
+
+int _ImmunityIdxFromPercent(int nPct)
+{
+    // Convertit un pourcentage (1..100) vers la CostTableValue attendue par l'IP
+    return ImmunityPctToValue(nPct);
+}
+
+
+// --- helpers % <-> enum pour Vuln ---
+// (mets 90% aussi dans ton mapping)
+int _PercentFromVulnIdx(int nIdx)
+{
+    if (nIdx==IP_CONST_DAMAGEVULNERABILITY_5_PERCENT)    return 5;
+    if (nIdx==IP_CONST_DAMAGEVULNERABILITY_10_PERCENT)   return 10;
+    if (nIdx==IP_CONST_DAMAGEVULNERABILITY_25_PERCENT)   return 25;
+    if (nIdx==IP_CONST_DAMAGEVULNERABILITY_50_PERCENT)   return 50;
+    if (nIdx==IP_CONST_DAMAGEVULNERABILITY_75_PERCENT)   return 75;
+    if (nIdx==IP_CONST_DAMAGEVULNERABILITY_90_PERCENT)   return 90;
+    if (nIdx==IP_CONST_DAMAGEVULNERABILITY_100_PERCENT)  return 100;
+    return 0;
+}
+
+// Palier <= nPct (floor) dans l’échelle NWN
+int _VulnIdxFromPercentFloor(int nPct)
+{
+    if (nPct >= 100) return IP_CONST_DAMAGEVULNERABILITY_100_PERCENT;
+    if (nPct >= 90)  return IP_CONST_DAMAGEVULNERABILITY_90_PERCENT;
+    if (nPct >= 75)  return IP_CONST_DAMAGEVULNERABILITY_75_PERCENT;
+    if (nPct >= 50)  return IP_CONST_DAMAGEVULNERABILITY_50_PERCENT;
+    if (nPct >= 25)  return IP_CONST_DAMAGEVULNERABILITY_25_PERCENT;
+    if (nPct >= 10)  return IP_CONST_DAMAGEVULNERABILITY_10_PERCENT;
+    if (nPct >= 5)   return IP_CONST_DAMAGEVULNERABILITY_5_PERCENT;
+    return 0;
+}
+
+
+
+int _ResistValueFromIdx(int nIdx){
+    if (nIdx==IP_CONST_DAMAGERESIST_5) return 5;
+    if (nIdx==IP_CONST_DAMAGERESIST_10) return 10;
+    if (nIdx==IP_CONST_DAMAGERESIST_15) return 15;
+    if (nIdx==IP_CONST_DAMAGERESIST_20) return 20;
+    if (nIdx==IP_CONST_DAMAGERESIST_25) return 25;
+    return 0;
+}
+
+// Scan IP existantes -> initialise les locals
+void RFB_CapsScanExisting(object oIt){
+    // Declarations first (NWScript requirement)
+    itemproperty ip;
+    int nType; int nSub; int nVal; int nTmp; int nIdx;
+    int add; int left; int bestVal; int newIdx;
+// scan always on (macro removed)
+
+    ip = GetFirstItemProperty(oIt);
+    while (GetIsItemPropertyValid(ip))
+    {
+        nType = GetItemPropertyType(ip);
+        nIdx = GetItemPropertyCostTableValue(ip);
+
+        if (nType==ITEM_PROPERTY_DAMAGE_BONUS){
+            int v=_EquivDamageBonusFromIdx(nIdx);
+            SetLocalInt(oIt,"rf_sum_dmgbonus", GetLocalInt(oIt,"rf_sum_dmgbonus")+v);
+        }
+        else if (nType==ITEM_PROPERTY_MASSIVE_CRITICALS){
+            int v=_EquivMassCritFromIdx(nIdx);
+            SetLocalInt(oIt,"rf_sum_masscrit", GetLocalInt(oIt,"rf_sum_masscrit")+v);
+        }
+        else if (nType==ITEM_PROPERTY_IMMUNITY_DAMAGE_TYPE){
+            int p=_PercentFromImmunityIdx(nIdx);
+            int t=GetItemPropertySubType(ip);
+            string k=_Key("rf_immu_type_",t);
+            SetLocalInt(oIt,k, GetLocalInt(oIt,k)+p);
+            SetLocalInt(oIt,"rf_immu_total", GetLocalInt(oIt,"rf_immu_total")+p);
+        }
+        else if (nType==ITEM_PROPERTY_DAMAGE_VULNERABILITY){
+            int p=_PercentFromVulnIdx(nIdx);
+            SetLocalInt(oIt,"rf_vuln_total", GetLocalInt(oIt,"rf_vuln_total")+p);
+        }
+        else if (nType==ITEM_PROPERTY_DAMAGE_RESISTANCE){
+            int v=_ResistValueFromIdx(nIdx);
+            int t=GetItemPropertySubType(ip);
+            string k=_Key("rf_resist_type_",t);
+            SetLocalInt(oIt,k, GetLocalInt(oIt,k)+v);
+            SetLocalInt(oIt,"rf_resist_total", GetLocalInt(oIt,"rf_resist_total")+v);
+        }
+        ip = GetNextItemProperty(oIt);
+    }
+}
+
+
+
+void RFB_CapsInit(object oIt){
+    DeleteLocalInt(oIt,"rf_sum_dmgbonus");
+    DeleteLocalInt(oIt,"rf_sum_masscrit");
+    DeleteLocalInt(oIt,"rf_immu_total");
+    DeleteLocalInt(oIt,"rf_vuln_total");
+    DeleteLocalInt(oIt,"rf_resist_total");
+
+    int t=0;
+    while (t <= IP_CONST_DAMAGETYPE_SONIC)
+    {
+        DeleteLocalInt(oIt,_Key("rf_immu_type_",t));
+        DeleteLocalInt(oIt,_Key("rf_resist_type_",t));
+        t = t + 1;
+    }
+    RFB_CapsScanExisting(oIt);
+}
+
+int _CapImmuTotal(object oIt, int nRarity){
+    if (RFB_IsPlastron(oIt)) return Cap_Immu_Total_Plastron(nRarity);
+    if (RFB_IsJewelry(oIt))  return Cap_Immu_Total_Bijoux(nRarity);
+    return Cap_Immu_Total_Autres(nRarity);
+}
+int _CapResistTotal(object oIt, int nRarity){
+    if (RFB_IsPlastron(oIt)) return Cap_Resist_Total_Plastron(nRarity);
+    if (RFB_IsJewelry(oIt))  return Cap_Resist_Total_Bijoux(nRarity);
+    return Cap_Resist_Total_Autres(nRarity);
+}
+
+// ------------------------------
+//  Wrappers "Capped" : posent l'IP ou réduisent/sautent
+// ------------------------------
+int RFB_AddDamageBonusCapped(object oIt, int nRarity, int bTwoH, int nDmgType, int nIdx, int nDur){
+    int add;
+
+    itemproperty ip;
+
+    add = _EquivDamageBonusFromIdx(nIdx);
+    if (add<=0) return FALSE;
+    int cap = bTwoH ? Cap_DamageBonus_Total_2H(nRarity) : Cap_DamageBonus_Total_1H(nRarity);
+    int cur = GetLocalInt(oIt,"rf_sum_dmgbonus");
+    int left = cap - cur;
+    if (left<=0) return FALSE;
+
+    while (add>left){
+        int _new = RFB_DB_PrevIdxSameFamily(nIdx);
+        if (_new <= 0){ add = 0; break; }
+        nIdx = _new;
+        add  = _EquivDamageBonusFromIdx(nIdx);
+    }
+    if (add<=0) return FALSE;
+    ip = ItemPropertyDamageBonus(nDmgType, nIdx);
+    if (!GetIsItemPropertyValid(ip)) return FALSE;
+    AddItemProperty(nDur, ip, oIt);
+    SetLocalInt(oIt,"rf_sum_dmgbonus", cur+add);
+    return TRUE;
+}
+
+int RFB_AddMassCritCapped(object oIt, int nRarity, int nIdx, int nDur){
+    int add;
+
+    itemproperty ip;
+
+    add = _EquivMassCritFromIdx(nIdx);
+    if (add<=0) return FALSE;
+    int cap=Cap_MassCrit_Total(nRarity);
+    int cur=GetLocalInt(oIt,"rf_sum_masscrit");
+    int left=cap-cur;
+    if (left<=0) return FALSE;
+    while (add>left){
+        if      (nIdx==IP_CONST_DAMAGEBONUS_8d6){ nIdx=IP_CONST_DAMAGEBONUS_7d6; add=42; }
+        else if (nIdx==IP_CONST_DAMAGEBONUS_7d6){ nIdx=IP_CONST_DAMAGEBONUS_6d6; add=36; }
+        else if (nIdx==IP_CONST_DAMAGEBONUS_6d6){ nIdx=IP_CONST_DAMAGEBONUS_5d6; add=30; }
+        else if (nIdx==IP_CONST_DAMAGEBONUS_5d6){ nIdx=IP_CONST_DAMAGEBONUS_4d6; add=24; }
+        else if (nIdx==IP_CONST_DAMAGEBONUS_4d6){ nIdx=IP_CONST_DAMAGEBONUS_3d6; add=18; }
+        else if (nIdx==IP_CONST_DAMAGEBONUS_3d6){ nIdx=IP_CONST_DAMAGEBONUS_2d6; add=12; }
+        else if (nIdx==IP_CONST_DAMAGEBONUS_2d6){ nIdx=IP_CONST_DAMAGEBONUS_1d6; add=6;  }
+        else { add=0; break; }
+    }
+    if (add<=0) return FALSE;
+    ip = ItemPropertyMassiveCritical(nIdx);
+    if (!GetIsItemPropertyValid(ip)) return FALSE;
+    AddItemProperty(nDur, ip, oIt);
+    SetLocalInt(oIt,"rf_sum_masscrit", cur+add);
+    return TRUE;
+}
+
+
+// Pose/augmente une immunité en respectant un cap total pour ce subtype.
+// Retourne TRUE si quelque chose a changé.
+int RFB_AddImmunityCapped(object oItem, int nSubtype, int nAddPct, int nCapPct)
+{
+    int nCur; int nNew; int nIdx;
+    itemproperty ip;
+
+    // Immunité actuelle
+    nCur = GetItemImmunityPercent(oItem, nSubtype);
+    nNew = nCur + nAddPct;
+    if (nNew > nCapPct) nNew = nCapPct;
+    if (nNew < 0) nNew = 0;
+
+    // Nettoyage puis repose
+    RemoveAllImmunity(oItem, nSubtype);
+
+    if (nNew == nCur) return FALSE; // rien à faire
+    if (nNew == 0)    return TRUE;  // on a juste nettoyé
+
+    nIdx = _ImmunityIdxFromPercent(nNew);
+    if (nIdx <= 0) return FALSE;
+
+    ip = ItemPropertyDamageImmunity(nSubtype, nIdx);
+    AddItemProperty(DURATION_TYPE_PERMANENT, ip, oItem);
+    return TRUE;
+}
+
+// Compat: ancienne signature (oItem, nRarity, nSubtype, nPctIdx, nDur)
+// Redirecte vers la nouvelle logique capée par pourcentage.
+int RFB_AddImmunityCapped_Compat(object oItem, int nRarity, int nSubtype, int nPctIdx, int nDur)
+{
+    int addPct = ImmunityValueToPct(nPctIdx);
+    int capPct = Cap_Immu_PerType_AllItems(nRarity);
+    return RFB_AddImmunityCapped(oItem, nSubtype, addPct, capPct);
+}
+
+
+
+// Remet l’immunité d’un subtype donné dans le cap, en consolidant en 1 IP.
+int RFB_ClampImmunityOnItem(object oItem, int nSubtype, int nCapPct)
+{
+    int nCur; int nClamp; int nIdx; itemproperty ip;
+
+    nCur = GetItemImmunityPercent(oItem, nSubtype);
+    if (nCur <= nCapPct) return FALSE;
+
+    nClamp = nCapPct;
+    RemoveAllImmunity(oItem, nSubtype);
+
+    nIdx = _ImmunityIdxFromPercent(nClamp);
+    if (nIdx <= 0) return FALSE;
+
+    ip = ItemPropertyDamageImmunity(nSubtype, nIdx);
+    AddItemProperty(DURATION_TYPE_PERMANENT, ip, oItem);
+    return TRUE;
+}
+
+
+int RFB_AddResistCapped(object oIt, int nRarity, int nDmgType, int nResIdx, int nDur){
+
+itemproperty ip;
+int nResIdx;      // si tu l’utilises plus bas
+int nDmgType;     // si tu l’utilises plus bas (ou laisse les params si déjà en signature)
+int nCur, nNew;   // si tu t’en sers pour calculer le cap
+
+    int add=_ResistValueFromIdx(nResIdx);
+    if (add<=0) return FALSE;
+    int capType = Cap_Resist_PerType_AllItems(nRarity);
+    int curType = GetLocalInt(oIt,_Key("rf_resist_type_",nDmgType));
+    int leftType = capType - curType;
+    if (leftType<=0) return FALSE;
+    int capTot = _CapResistTotal(oIt,nRarity);
+    int curTot = GetLocalInt(oIt,"rf_resist_total");
+    int leftTot = capTot - curTot;
+    if (leftTot<=0) return FALSE;
+    int left = leftType < leftTot ? leftType : leftTot;
+    while (add>left){
+        if      (nResIdx==IP_CONST_DAMAGERESIST_25){ nResIdx=IP_CONST_DAMAGERESIST_20; add=20; }
+        else if (nResIdx==IP_CONST_DAMAGERESIST_20){ nResIdx=IP_CONST_DAMAGERESIST_15; add=15; }
+        else if (nResIdx==IP_CONST_DAMAGERESIST_15){ nResIdx=IP_CONST_DAMAGERESIST_10; add=10; }
+        else if (nResIdx==IP_CONST_DAMAGERESIST_10){ nResIdx=IP_CONST_DAMAGERESIST_5;  add=5;  }
+        else { add=0; break; }
+    }
+    if (add<=0) return FALSE;
+    ip = ItemPropertyDamageResistance(nDmgType, nResIdx);
+    if (!GetIsItemPropertyValid(ip)) return FALSE;
+    AddItemProperty(nDur, ip, oIt);
+    SetLocalInt(oIt,_Key("rf_resist_type_",nDmgType), curType+add);
+    SetLocalInt(oIt,"rf_resist_total", curTot+add);
+    return TRUE;
+}
+
+int RFB_AddVulnCapped(object oIt, int nRarity, int nDmgType, int nPctIdx, int nDur)
+{
+    // Déclarations en tête (NWN)
+    int add; int cap; int cur; int left;
+    int target; int nIdx; int chosenPct;
+    itemproperty ip;
+
+    add = _PercentFromVulnIdx(nPctIdx);
+    if (add <= 0) return FALSE;
+
+    cap  = Cap_Vuln_Total(nRarity);
+    cur  = GetLocalInt(oIt, "rf_vuln_total");
+    left = cap - cur;
+    if (left <= 0) return FALSE;
+
+    // On ne pose qu’un seul palier, adapté au reste dispo (left)
+    target = add;
+    if (target > left) target = left;
+
+    // Choisit l’index NWN au palier <= target
+    nIdx = _VulnIdxFromPercentFloor(target);
+    if (nIdx <= 0) return FALSE;
+
+    chosenPct = _PercentFromVulnIdx(nIdx); // % réel posé
+
+    ip = ItemPropertyDamageVulnerability(nDmgType, nIdx);
+    if (!GetIsItemPropertyValid(ip)) return FALSE;
+
+    AddItemProperty(nDur, ip, oIt);
+    SetLocalInt(oIt, "rf_vuln_total", cur + chosenPct);
+    return TRUE;
+}
+
+
+
+
+// ------------------------------
+//  Post-traitement: enforce caps si le générateur a débordé
+//  (Passe unique simple: réduit les plus grosses valeurs en premier)
+// ------------------------------
+
+void RFB_EnforceCaps(object oIt, int nRarity){
+    // Variables pré-déclarées (compat NWScript)
+    int capImType, capImTot, capResType, capResTot;
+    int pass, t, tot, overTot, anyOverType, tt, newIdx;
+    int pass2, ty2, over, pass3, pass4;
+    int bestVal, bestTy, idx, pct, ty, val;
+    int overDB, overMC, capDB, capMC;
+    itemproperty ip, best, cur, cur2;
+    int tp;
+
+    // IMMUNITY per type + total
+    capImType = Cap_Immu_PerType_AllItems(nRarity);
+    capImTot  = _CapImmuTotal(oIt,nRarity);
+
+    pass = 0;
+    while (pass < 8)
+    {
+        pass = pass + 1;
+
+        // Reset caches
+        t = 0;
+        while (t <= IP_CONST_DAMAGETYPE_SONIC){
+            SetLocalInt(oIt,_Key("rf_immu_type_",t), 0);
+            t = t + 1;
+        }
+        SetLocalInt(oIt,"rf_immu_total", 0);
+
+        // Recalcule depuis l'item
+        ip = GetFirstItemProperty(oIt);
+        while (GetIsItemPropertyValid(ip))
+        {
+            if (GetItemPropertyType(ip)==ITEM_PROPERTY_IMMUNITY_DAMAGE_TYPE){
+                idx = GetItemPropertyCostTableValue(ip);
+                pct = _PercentFromImmunityIdx(idx);
+                ty  = GetItemPropertySubType(ip);
+                SetLocalInt(oIt,_Key("rf_immu_type_",ty), GetLocalInt(oIt,_Key("rf_immu_type_",ty))+pct);
+                SetLocalInt(oIt,"rf_immu_total", GetLocalInt(oIt,"rf_immu_total")+pct);
+            }
+            ip = GetNextItemProperty(oIt);
+        }
+
+        overTot = GetLocalInt(oIt,"rf_immu_total") - capImTot;
+        anyOverType = FALSE;
+        tt = 0;
+        while (tt <= IP_CONST_DAMAGETYPE_SONIC){
+            if (GetLocalInt(oIt,_Key("rf_immu_type_",tt)) > capImType){ anyOverType = TRUE; break; }
+            tt = tt + 1;
+        }
+        if (!anyOverType && overTot <= 0) break;
+
+        // Trouve l'IP d'immunité la plus forte
+        bestVal = 0; bestTy = -1; best = ip; // best = null-ish
+        cur = GetFirstItemProperty(oIt);
+        while (GetIsItemPropertyValid(cur)){
+            if (GetItemPropertyType(cur)==ITEM_PROPERTY_IMMUNITY_DAMAGE_TYPE){
+                idx = GetItemPropertyCostTableValue(cur);
+                pct = _PercentFromImmunityIdx(idx);
+                ty  = GetItemPropertySubType(cur);
+                if ((overTot>0 || (GetLocalInt(oIt,_Key("rf_immu_type_",ty))-capImType)>0) && pct>bestVal){
+                    best=cur; bestVal=pct; bestTy=ty;
+                }
+            }
+            cur = GetNextItemProperty(oIt);
+        }
+        if (bestVal <= 0) break;
+
+        // Remplace par un palier inférieur
+        newIdx = 0;
+        if      (bestVal>=100) newIdx = ImmunityPctToValue(90);
+        else if (bestVal>=90)  newIdx = ImmunityPctToValue(75);
+        else if (bestVal>=75)  newIdx = ImmunityPctToValue(50);
+        else if (bestVal>=50)  newIdx = ImmunityPctToValue(25);
+        else if (bestVal>=25)  newIdx = ImmunityPctToValue(10);
+        else if (bestVal>=10)  newIdx = ImmunityPctToValue(5);
+        else newIdx = 0;
+
+        RemoveItemProperty(oIt, best);
+        if (newIdx>0){
+            AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyDamageImmunity(bestTy, newIdx), oIt);
+        }
+    }
+
+    // RESISTANCE per type + total
+    capResType = Cap_Resist_PerType_AllItems(nRarity);
+    capResTot  = _CapResistTotal(oIt,nRarity);
+    pass2 = 0;
+    while (pass2 < 8){
+        pass2 = pass2 + 1;
+
+        t = 0;
+        while (t <= IP_CONST_DAMAGETYPE_SONIC){
+            SetLocalInt(oIt,_Key("rf_resist_type_",t), 0);
+            t = t + 1;
+        }
+        SetLocalInt(oIt,"rf_resist_total", 0);
+
+        ip = GetFirstItemProperty(oIt);
+        while (GetIsItemPropertyValid(ip)){
+            if (GetItemPropertyType(ip)==ITEM_PROPERTY_DAMAGE_RESISTANCE){
+                idx = GetItemPropertyCostTableValue(ip);
+                val = _ResistValueFromIdx(idx);
+                ty  = GetItemPropertySubType(ip);
+                SetLocalInt(oIt,_Key("rf_resist_type_",ty), GetLocalInt(oIt,_Key("rf_resist_type_",ty))+val);
+                SetLocalInt(oIt,"rf_resist_total", GetLocalInt(oIt,"rf_resist_total")+val);
+            }
+            ip = GetNextItemProperty(oIt);
+        }
+        overTot = GetLocalInt(oIt,"rf_resist_total") - capResTot;
+        anyOverType = FALSE; ty2 = 0;
+        while (ty2 <= IP_CONST_DAMAGETYPE_SONIC){
+            if (GetLocalInt(oIt,_Key("rf_resist_type_",ty2)) > capResType){ anyOverType=TRUE; break; }
+            ty2 = ty2 + 1;
+        }
+        if (!anyOverType && overTot<=0) break;
+
+        // Meilleure résistance à réduire
+        bestVal=0; bestTy=-1; best=ip;
+        cur = GetFirstItemProperty(oIt);
+        while (GetIsItemPropertyValid(cur)){
+            if (GetItemPropertyType(cur)==ITEM_PROPERTY_DAMAGE_RESISTANCE){
+                idx = GetItemPropertyCostTableValue(cur);
+                val = _ResistValueFromIdx(idx);
+                ty  = GetItemPropertySubType(cur);
+                if ((overTot>0 || (GetLocalInt(oIt,_Key("rf_resist_type_",ty))-capResType)>0) && val>bestVal){
+                    best=cur; bestVal=val; bestTy=ty;
+                }
+            }
+            cur = GetNextItemProperty(oIt);
+        }
+        if (bestVal<=0) break;
+
+        newIdx = 0;
+        if      (bestVal>=25) newIdx = IP_CONST_DAMAGERESIST_20;
+        else if (bestVal>=20) newIdx = IP_CONST_DAMAGERESIST_15;
+        else if (bestVal>=15) newIdx = IP_CONST_DAMAGERESIST_10;
+        else if (bestVal>=10) newIdx = IP_CONST_DAMAGERESIST_5;
+        else newIdx = 0;
+
+        RemoveItemProperty(oIt, best);
+        if (newIdx>0){
+            AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyDamageResistance(bestTy, newIdx), oIt);
+        }
+    }
+
+// VULNERABILITY total only
+pass3 = 0;
+while (pass3 < 8) // quelques itérations de sécurité
+{
+    pass3 = pass3 + 1;
+    SetLocalInt(oIt, "rf_vuln_total", 0);
+
+    ip = GetFirstItemProperty(oIt);
+    while (GetIsItemPropertyValid(ip))
+    {
+        if (GetItemPropertyType(ip) == ITEM_PROPERTY_DAMAGE_VULNERABILITY)
+        {
+            idx = GetItemPropertyCostTableValue(ip);
+            SetLocalInt(oIt, "rf_vuln_total",
+                GetLocalInt(oIt, "rf_vuln_total") + _PercentFromVulnIdx(idx));
+        }
+        ip = GetNextItemProperty(oIt);
+    }
+
+    over = GetLocalInt(oIt, "rf_vuln_total") - Cap_Vuln_Total(nRarity);
+    if (over <= 0) break;
+
+    bestVal = 0; bestTy = -1; best = ip;
+    cur = GetFirstItemProperty(oIt);
+    while (GetIsItemPropertyValid(cur))
+    {
+        if (GetItemPropertyType(cur) == ITEM_PROPERTY_DAMAGE_VULNERABILITY)
+        {
+            idx = GetItemPropertyCostTableValue(cur);
+            val = _PercentFromVulnIdx(idx);
+            if (val > bestVal) { best = cur; bestVal = val; bestTy = GetItemPropertySubType(cur); }
+        }
+        cur = GetNextItemProperty(oIt);
+    }
+    if (bestVal <= 0) break;
+
+    // Descend d'un palier NWN valide (supprime 100?90, 90?75, 75?50, 50?25, 25?10, 10?5)
+    newIdx = 0;
+    if      (bestVal >= 100) newIdx = IP_CONST_DAMAGEVULNERABILITY_90_PERCENT;
+    else if (bestVal >=  90) newIdx = IP_CONST_DAMAGEVULNERABILITY_75_PERCENT;
+    else if (bestVal >=  75) newIdx = IP_CONST_DAMAGEVULNERABILITY_50_PERCENT;
+    else if (bestVal >=  50) newIdx = IP_CONST_DAMAGEVULNERABILITY_25_PERCENT;
+    else if (bestVal >=  25) newIdx = IP_CONST_DAMAGEVULNERABILITY_10_PERCENT;
+    else if (bestVal >=  10) newIdx = IP_CONST_DAMAGEVULNERABILITY_5_PERCENT;
+    else newIdx = 0;
+
+    RemoveItemProperty(oIt, best);
+    if (newIdx > 0)
+    {
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyDamageVulnerability(bestTy, newIdx), oIt);
+    }
+}
+
+
+    // DAMAGE BONUS & MASSIVE CRITS totals
+    capDB = (RFB_IsTwoHandedWeapon(oIt) ? Cap_DamageBonus_Total_2H(nRarity) : Cap_DamageBonus_Total_1H(nRarity));
+    capMC = Cap_MassCrit_Total(nRarity);
+    pass4 = 0;
+    while (pass4 < 6){
+        pass4 = pass4 + 1;
+        SetLocalInt(oIt,"rf_sum_dmgbonus",0);
+        SetLocalInt(oIt,"rf_sum_masscrit",0);
+
+        ip = GetFirstItemProperty(oIt);
+        while (GetIsItemPropertyValid(ip)){
+            int tp=GetItemPropertyType(ip);
+            if (tp==ITEM_PROPERTY_DAMAGE_BONUS){
+                idx = GetItemPropertyCostTableValue(ip);
+                SetLocalInt(oIt,"rf_sum_dmgbonus", GetLocalInt(oIt,"rf_sum_dmgbonus")+_EquivDamageBonusFromIdx(idx));
+            }
+            else if (tp==ITEM_PROPERTY_MASSIVE_CRITICALS){
+                idx = GetItemPropertyCostTableValue(ip);
+                SetLocalInt(oIt,"rf_sum_masscrit", GetLocalInt(oIt,"rf_sum_masscrit")+_EquivMassCritFromIdx(idx));
+            }
+            ip = GetNextItemProperty(oIt);
+        }
+        overDB = GetLocalInt(oIt,"rf_sum_dmgbonus") - capDB;
+        overMC = GetLocalInt(oIt,"rf_sum_masscrit") - capMC;
+        if (overDB<=0 && overMC<=0) break;
+
+        bestVal=0; bestTy=-1; best=ip;
+        int bestIsDB = TRUE;
+        cur2 = GetFirstItemProperty(oIt);
+        while (GetIsItemPropertyValid(cur2)){
+            int tp=GetItemPropertyType(cur2);
+            if ((tp==ITEM_PROPERTY_DAMAGE_BONUS && overDB>0) || (tp==ITEM_PROPERTY_MASSIVE_CRITICALS && overMC>0)){
+                idx = GetItemPropertyCostTableValue(cur2);
+                val = (tp==ITEM_PROPERTY_DAMAGE_BONUS) ? _EquivDamageBonusFromIdx(idx) : _EquivMassCritFromIdx(idx);
+                if (val>bestVal){ best=cur2; bestVal=val; bestIsDB=(tp==ITEM_PROPERTY_DAMAGE_BONUS); bestTy=GetItemPropertySubType(cur2); }
+            }
+            cur2 = GetNextItemProperty(oIt);
+        }
+        if (bestVal<=0) break;
+
+        RemoveItemProperty(oIt, best);
+        // Réduction par palier dans la MÊME famille (dés ou +fixe)
+        int curIdx = GetItemPropertyCostTableValue(best);
+        int newIdx = RFB_DB_PrevIdxSameFamily(curIdx);
+        if (bestIsDB){
+            if (newIdx>0) AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyDamageBonus(bestTy, newIdx), oIt);
+        } else {
+            if (newIdx>0) AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyMassiveCritical(newIdx), oIt);
+        }
+
+    }
+}
+
 void RFB_ApplyAllBonuses(object oItem, int nTierInput)
 {
     int nTier = RFB_ClampTier(nTierInput);
+    RFB_CapsInit(oItem);
 
     // ==========================================
     //  AC BONUS
@@ -924,8 +1758,8 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3){nMin=3;nMax=4;}
         else if (nTier==4){nMin=5;nMax=6;}
         else if (nTier==5){nMin=7;nMax=8;}
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyACBonusVsAlign(RFB_RandAlignGroup(), RFB_RandInRange(nMin,nMax)), oItem);
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyACBonusVsAlign(RFB_RandAlignGroup(), RFB_RandInRange(nMin,nMax)), oItem);
+
     } while(FALSE);
 
     // ==========================================
@@ -939,8 +1773,8 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3){nMin=3;nMax=4;}
         else if (nTier==4){nMin=5;nMax=6;}
         else if (nTier==5){nMin=7;nMax=8;}
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyACBonusVsDmgType(RFB_RandPhysicalDmgTypeOnly(), RFB_RandInRange(nMin,nMax)), oItem);
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyACBonusVsDmgType(RFB_RandPhysicalDmgTypeOnly(), RFB_RandInRange(nMin,nMax)), oItem);
+
     } while(FALSE);
 
     // ==========================================
@@ -954,8 +1788,8 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3){nMin=3;nMax=4;}
         else if (nTier==4){nMin=5;nMax=6;}
         else if (nTier==5){nMin=7;nMax=8;}
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyACBonusVsRace(RFB_RandRace(), RFB_RandInRange(nMin,nMax)), oItem);
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyACBonusVsRace(RFB_RandRace(), RFB_RandInRange(nMin,nMax)), oItem);
+
     } while(FALSE);
 
     // ==========================================
@@ -969,8 +1803,8 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3){nMin=3;nMax=4;}
         else if (nTier==4){nMin=5;nMax=6;}
         else if (nTier==5){nMin=7;nMax=8;}
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyACBonusVsSAlign(RFB_RandSpecificAlign(), RFB_RandInRange(nMin,nMax)), oItem);
+        AddItemProperty(DURATION_TYPE_PERMANENT, ItemPropertyACBonusVsSAlign(RFB_RandSpecificAlign(), RFB_RandInRange(nMin,nMax)), oItem);
+
     } while(FALSE);
 
     // ==========================================
@@ -1196,8 +2030,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
             else if (nTier==4) nMaxCum=32;
             else if (nTier==5) nMaxCum=40;
         }
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyDamageBonus(RFB_RandDmgType(), RFB_DamageBonusFromMax(nMaxCum)), oItem);
+        RFB_AddDamageBonusCapped(oItem, nTier, RFB_IsTwoHandedWeapon(oItem), RFB_RandDmgType(), RFB_DamageBonusFromMax(nMaxCum), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1260,8 +2093,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3) raw=24;
         else if (nTier==4) raw=36;
         else if (nTier==5) raw=50;
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyDamageImmunity(RFB_RandDmgType(), RFB_ImmPctToEnum(raw)), oItem);
+        RFB_AddImmunityCapped_Compat(oItem, nTier, RFB_RandDmgType(), RFB_ImmPctToEnum(raw), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1276,8 +2108,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3) raw=14;
         else if (nTier==4) raw=18;
         else if (nTier==5) raw=24;
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyDamageImmunity(RFB_RandDmgType(), RFB_ImmPctToEnum(raw)), oItem);
+        RFB_AddImmunityCapped_Compat(oItem, nTier, RFB_RandDmgType(), RFB_ImmPctToEnum(raw), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1292,8 +2123,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3) raw=16;
         else if (nTier==4) raw=22;
         else if (nTier==5) raw=28;
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyDamageImmunity(RFB_RandDmgType(), RFB_ImmPctToEnum(raw)), oItem);
+        RFB_AddImmunityCapped_Compat(oItem, nTier, RFB_RandDmgType(), RFB_ImmPctToEnum(raw), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1307,8 +2137,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3) raw=20;
         else if (nTier==4) raw=24;
         else if (nTier==5) raw=26;
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyDamageImmunity(RFB_RandDmgType(), RFB_ImmPctToEnum(raw)), oItem);
+        RFB_AddImmunityCapped_Compat(oItem, nTier, RFB_RandDmgType(), RFB_ImmPctToEnum(raw), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1343,8 +2172,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3)nMax=25;
         else if (nTier==4)nMax=30;
         else if (nTier==5)nMax=45;
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyDamageResistance(RFB_RandDmgType(), RFB_StepToResistAmount(nMax)), oItem);
+        RFB_AddResistCapped(oItem, nTier, RFB_RandDmgType(), RFB_StepToResistAmount(nMax), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1359,8 +2187,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3)nMax=15;
         else if (nTier==4)nMax=20;
         else if (nTier==5)nMax=25;
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyDamageResistance(RFB_RandDmgType(), RFB_StepToResistAmount(nMax)), oItem);
+        RFB_AddResistCapped(oItem, nTier, RFB_RandDmgType(), RFB_StepToResistAmount(nMax), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1375,8 +2202,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3)nMax=20;
         else if (nTier==4)nMax=25;
         else if (nTier==5)nMax=35;
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyDamageResistance(RFB_RandDmgType(), RFB_StepToResistAmount(nMax)), oItem);
+        RFB_AddResistCapped(oItem, nTier, RFB_RandDmgType(), RFB_StepToResistAmount(nMax), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1390,8 +2216,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3) raw=24;
         else if (nTier==4) raw=36;
         else if (nTier==5) raw=50;
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyDamageVulnerability(RFB_RandDmgType(), RFB_VulnPctToEnum(raw)), oItem);
+        RFB_AddVulnCapped(oItem, nTier, RFB_RandDmgType(), RFB_VulnPctToEnum(raw), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1690,8 +2515,7 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         else if (nTier==3)nMax=26;
         else if (nTier==4)nMax=44;
         else if (nTier==5)nMax=58;
-        AddItemProperty(DURATION_TYPE_PERMANENT,
-            ItemPropertyMassiveCritical(RFB_MassiveCritFromMax(nMax)), oItem);
+        RFB_AddMassCritCapped(oItem, nTier, RFB_MassiveCritFromMax(nMax), DURATION_TYPE_PERMANENT);
     } while(FALSE);
 
     // ==========================================
@@ -1903,7 +2727,690 @@ void RFB_ApplyAllBonuses(object oItem, int nTierInput)
         AddItemProperty(DURATION_TYPE_PERMANENT,
             ItemPropertyWeightReduction(RFB_WeightReductionToEnum(60)), oItem);
     } while(FALSE);
+    RFB_EnforceCaps(oItem, nTier);
 }
+
+// Appel utilitaire : clamp pour tous les subtypes connus
+void RFB_EnforceImmunityCapsAll(object oItem, int nCapPct)
+{
+    // Physiques
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_CONTONDANT,  nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_PERFORANT,   nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_TRANCHANT,   nCapPct);
+
+    // Élémentaires & spéciaux
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_MAGIQUE,     nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_ACIDE,       nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_FROID,       nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_DIVIN,       nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_ELECTRICITE, nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_FEU,         nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_NEGATIF,     nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_POSITIF,     nCapPct);
+    RFB_ClampImmunityOnItem(oItem, SUBTYPE_IMMUNITE_SONIQUE,     nCapPct);
+}
+
+
+int RFB_DB_TotalFromIdx(int nIdx)
+{
+    if (nIdx >= 1 && nIdx <= 5) return nIdx;
+    if (nIdx == 6)  return 4;
+    if (nIdx == 7)  return 6;
+    if (nIdx == 8)  return 8;
+    if (nIdx == 9)  return 10;
+    if (nIdx == 10) return 12;
+    if (nIdx == 11) return 16;
+    if (nIdx == 12) return 8;
+    if (nIdx == 13) return 20;
+    if (nIdx == 14) return 12;
+    if (nIdx == 15) return 24;
+    if (nIdx >= 16 && nIdx <= 30) return nIdx - 10;
+
+    if (nIdx >= 31 && nIdx <= 38)  return (nIdx - 28) * 4;
+    if (nIdx >= 39 && nIdx <= 51)  return (nIdx - 36) * 6;
+    if (nIdx >= 52 && nIdx <= 64)  return (nIdx - 49) * 8;
+    if (nIdx >= 65 && nIdx <= 77)  return (nIdx - 62) * 10;
+    if (nIdx >= 78 && nIdx <= 85)  return (nIdx - 75) * 12;
+    if (nIdx >= 86 && nIdx <= 123) return (nIdx - 83) * 20;
+
+    if (nIdx >= 124 && nIdx <= 133) return (nIdx - 113) * 12;
+    if (nIdx >= 134 && nIdx <= 143) return (nIdx - 123) * 4;
+    if (nIdx >= 144 && nIdx <= 148) return (nIdx - 128) * 6;
+    if (nIdx >= 149 && nIdx <= 153) return (nIdx - 133) * 8;
+    if (nIdx >= 154 && nIdx <= 158) return (nIdx - 138) * 10;
+    return 0;
+}
+
+
+
+
+int RFB_DB_IsDiceIdx(int nIdx)
+{
+    if (nIdx == 6 || nIdx == 7 || nIdx == 8 || nIdx == 9 || nIdx == 12 || nIdx == 10 || nIdx == 11 || nIdx == 13 || nIdx == 14 || nIdx == 15) return TRUE;
+    if ((nIdx >= 31 && nIdx <= 38)  ||
+        (nIdx >= 39 && nIdx <= 51)  ||
+        (nIdx >= 52 && nIdx <= 64)  ||
+        (nIdx >= 65 && nIdx <= 77)  ||
+        (nIdx >= 78 && nIdx <= 85)  ||
+        (nIdx >= 86 && nIdx <= 123) ||
+        (nIdx >= 124 && nIdx <= 133)||
+        (nIdx >= 134 && nIdx <= 143)||
+        (nIdx >= 144 && nIdx <= 148)||
+        (nIdx >= 149 && nIdx <= 153)||
+        (nIdx >= 154 && nIdx <= 158)) return TRUE;
+    return FALSE;
+}
+
+
+
+
+int RFB_RollTargetFromCap(int nCap)
+{
+    int pct = Random(100) + 1;
+    int target = (nCap * pct) / 100;
+    int jitter = (Random(61) - 30);
+    target = (target * (100 + jitter)) / 100;
+    if (target < 1) target = 1;
+    if (target > nCap) target = nCap;
+    return target;
+}
+
+
+
+
+int RFB_SelectDiceIdxNear(int nTarget, int nTolLo, int nTolHi)
+{
+    int lo = (nTarget * (100 - nTolLo)) / 100;
+    int hi = (nTarget * (100 + nTolHi)) / 100;
+    if (lo < 1) lo = 1;
+    if (hi < 1) hi = 1;
+
+    int bestIdx = 0;
+    int count = 0;
+    int i = 1;
+    int v;
+
+    while (i <= 158)
+    {
+        if (RFB_DB_IsDiceIdx(i))
+        {
+            v = RFB_DB_TotalFromIdx(i);
+            if (v >= lo && v <= hi)
+            {
+                count = count + 1;
+                if (Random(count) == 0) bestIdx = i;
+            }
+        }
+        i = i + 1;
+    }
+    if (bestIdx != 0) return bestIdx;
+
+    int step = 0;
+    int maxStep = 8;
+    while (step < maxStep)
+    {
+        step = step + 1;
+        lo = (nTarget * (100 - (nTolLo + step*5))) / 100;
+        hi = (nTarget * (100 + (nTolHi + step*5))) / 100;
+        if (lo < 1) lo = 1;
+
+        i = 1; count = 0; bestIdx = 0;
+        while (i <= 158)
+        {
+            if (RFB_DB_IsDiceIdx(i))
+            {
+                v = RFB_DB_TotalFromIdx(i);
+                if (v >= lo && v <= hi)
+                {
+                    count = count + 1;
+                    if (Random(count) == 0) bestIdx = i;
+                }
+            }
+            i = i + 1;
+        }
+        if (bestIdx != 0) return bestIdx;
+    }
+
+    int bestDiff = 99999;
+    i = 1;
+    while (i <= 158)
+    {
+        if (RFB_DB_IsDiceIdx(i))
+        {
+            v = RFB_DB_TotalFromIdx(i);
+            int d = v - nTarget; if (d < 0) d = -d;
+            if (d < bestDiff) { bestDiff = d; bestIdx = i; }
+        }
+        i = i + 1;
+    }
+    return bestIdx;
+}
+
+
+
+
+int RFB_SelectDiceIdxForCap(int nCap)
+{
+    int t = RFB_RollTargetFromCap(nCap);
+    return RFB_SelectDiceIdxNear(t, 20, 20);
+}
+
+
+
+
+int Cap_DB_1H(int nRarity)
+{
+    if (nRarity <= 1) return 2;
+    if (nRarity == 2) return 8;
+    if (nRarity == 3) return 16;
+    if (nRarity == 4) return 32;
+    return 40;
+}
+
+
+
+
+int Cap_DB_2H(int nRarity)
+{
+    if (nRarity <= 1) return 4;
+    if (nRarity == 2) return 12;
+    if (nRarity == 3) return 22;
+    if (nRarity == 4) return 40;
+    return 52;
+}
+
+
+
+
+int Cap_DB_Vs(int nRarity)
+{
+    if (nRarity <= 1) return 6;
+    if (nRarity == 2) return 14;
+    if (nRarity == 3) return 26;
+    if (nRarity == 4) return 44;
+    return 58;
+}
+
+
+
+
+int RFB_SelectIdx_DB_Base(int nRarity, int bTwoHand)
+{
+    int cap = bTwoHand ? Cap_DB_2H(nRarity) : Cap_DB_1H(nRarity);
+    return RFB_SelectDiceIdxForCap(cap);
+}
+
+
+
+
+int RFB_SelectIdx_DB_VsGeneric(int nRarity)
+{
+    int cap = Cap_DB_Vs(nRarity);
+    return RFB_SelectDiceIdxForCap(cap);
+}
+
+
+
+
+int RFB_AddDmgBonusIdx_VsAlign(object oIt, int nAlignGroup, int nDmgType, int nIdx, int nDur)
+{
+    if (!GetIsObjectValid(oIt)) return FALSE;
+    itemproperty ip;
+    int count;
+
+    // Cas natifs
+    if ( (nIdx >= 1 && nIdx <= 20) || (nIdx >= 6 && nIdx <= 15) )
+    {
+        ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, nIdx);
+        if (!GetIsItemPropertyValid(ip)) return FALSE;
+        AddItemProperty(nDur, ip, oIt);
+        return TRUE;
+    }
+
+    // +11..+20 => +10 + reste
+    if (nIdx >= 21 && nIdx <= 30)
+    {
+        ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 20);
+        if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, nIdx - 10);
+        if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        return TRUE;
+    }
+
+    // d4
+    if ( (nIdx >= 31 && nIdx <= 38) || (nIdx >= 134 && nIdx <= 143) )
+    {
+        if (nIdx >= 31 && nIdx <= 38) count = nIdx - 28; else count = nIdx - 123;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 12); // 2d4
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 6); // 1d4
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d6
+    if ( (nIdx >= 39 && nIdx <= 51) || (nIdx >= 144 && nIdx <= 148) )
+    {
+        if (nIdx >= 39 && nIdx <= 51) count = nIdx - 36; else count = nIdx - 128;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 10); // 2d6
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 7); // 1d6
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d8
+    if ( (nIdx >= 52 && nIdx <= 64) || (nIdx >= 149 && nIdx <= 153) )
+    {
+        if (nIdx >= 52 && nIdx <= 64) count = nIdx - 49; else count = nIdx - 133;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 11); // 2d8
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 8); // 1d8
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d10
+    if ( (nIdx >= 65 && nIdx <= 77) || (nIdx >= 154 && nIdx <= 158) )
+    {
+        if (nIdx >= 65 && nIdx <= 77) count = nIdx - 62; else count = nIdx - 138;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 13); // 2d10
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 9); // 1d10
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d12
+    if ( (nIdx >= 78 && nIdx <= 85) || (nIdx >= 124 && nIdx <= 133) )
+    {
+        if (nIdx >= 78 && nIdx <= 85) count = nIdx - 75; else count = nIdx - 113;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 15); // 2d12
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 14); // 1d12
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d20 ~ 2d10 + 2d10 (approx)
+    if (nIdx >= 86 && nIdx <= 123)
+    {
+        count = nIdx - 83; // 3..40
+        int j = 0;
+        while (j < count)
+        {
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 13);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            ip = ItemPropertyDamageBonusVsAlign(nAlignGroup, nDmgType, 13);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            j = j + 1;
+        }
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+
+
+
+
+int RFB_AddDmgBonusIdx_VsRace(object oIt, int nRace, int nDmgType, int nIdx, int nDur)
+{
+    if (!GetIsObjectValid(oIt)) return FALSE;
+    itemproperty ip;
+    int count;
+
+    if ( (nIdx >= 1 && nIdx <= 20) || (nIdx >= 6 && nIdx <= 15) )
+    {
+        ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, nIdx);
+        if (!GetIsItemPropertyValid(ip)) return FALSE;
+        AddItemProperty(nDur, ip, oIt);
+        return TRUE;
+    }
+
+    if (nIdx >= 21 && nIdx <= 30)
+    {
+        ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 20);
+        if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, nIdx - 10);
+        if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        return TRUE;
+    }
+
+    if ( (nIdx >= 31 && nIdx <= 38) || (nIdx >= 134 && nIdx <= 143) )
+    {
+        if (nIdx >= 31 && nIdx <= 38) count = nIdx - 28; else count = nIdx - 123;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 12);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 6);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    if ( (nIdx >= 39 && nIdx <= 51) || (nIdx >= 144 && nIdx <= 148) )
+    {
+        if (nIdx >= 39 && nIdx <= 51) count = nIdx - 36; else count = nIdx - 128;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 10);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 7);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    if ( (nIdx >= 52 && nIdx <= 64) || (nIdx >= 149 && nIdx <= 153) )
+    {
+        if (nIdx >= 52 && nIdx <= 64) count = nIdx - 49; else count = nIdx - 133;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 11);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 8);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    if ( (nIdx >= 65 && nIdx <= 77) || (nIdx >= 154 && nIdx <= 158) )
+    {
+        if (nIdx >= 65 && nIdx <= 77) count = nIdx - 62; else count = nIdx - 138;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 13);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 9);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    if ( (nIdx >= 78 && nIdx <= 85) || (nIdx >= 124 && nIdx <= 133) )
+    {
+        if (nIdx >= 78 && nIdx <= 85) count = nIdx - 75; else count = nIdx - 113;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 15);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 14);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    if (nIdx >= 86 && nIdx <= 123)
+    {
+        count = nIdx - 83;
+        int j = 0;
+        while (j < count)
+        {
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 13);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            ip = ItemPropertyDamageBonusVsRace(nRace, nDmgType, 13);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            j = j + 1;
+        }
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+
+
+
+
+// Garde ce prototype si tes wrappers l'appellent déjà ainsi
+int RFB_AddDmgBonusIdx_VsSAlign(object oIt, int nGoodEvil, int nLawChaos, int nDmgType, int nIdx, int nDur)
+{
+    if (!GetIsObjectValid(oIt)) return FALSE;
+
+    itemproperty ip;
+    int count;
+
+    // --- Cas nativement supportés par le moteur ---
+    //  +1..+10 (1..10, 16..20 pour +6..+10)
+    //  1d4,1d6,1d8,1d10,1d12 (6,7,8,9,14)
+    //  2d4,2d6,2d8,2d10,2d12 (12,10,11,13,15)
+    if ( (nIdx >= 1 && nIdx <= 20) || (nIdx >= 6 && nIdx <= 15) )
+    {
+        ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, nIdx); // *** 3 paramètres ***
+        if (!GetIsItemPropertyValid(ip)) return FALSE;
+        AddItemProperty(nDur, ip, oIt);
+        return TRUE;
+    }
+
+    // --- +11..+20 => +10 (20) + (reste) (21..30) ---
+    if (nIdx >= 21 && nIdx <= 30)
+    {
+        ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 20);
+        if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+
+        ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, nIdx - 10);
+        if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+
+        return TRUE;
+    }
+
+    // --- d4 : 3d4..10d4 (31..38) et 11d4..20d4 (134..143) ---
+    // base : 1d4 = 6, 2d4 = 12
+    if ( (nIdx >= 31 && nIdx <= 38) || (nIdx >= 134 && nIdx <= 143) )
+    {
+        if (nIdx >= 31 && nIdx <= 38) count = nIdx - 28; else count = nIdx - 123;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 12); // 2d4
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 6); // 1d4
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // --- d6 : 3d6..15d6 (39..51) et 16d6..20d6 (144..148) ---
+    // base : 1d6 = 7, 2d6 = 10
+    if ( (nIdx >= 39 && nIdx <= 51) || (nIdx >= 144 && nIdx <= 148) )
+    {
+        if (nIdx >= 39 && nIdx <= 51) count = nIdx - 36; else count = nIdx - 128;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 10); // 2d6
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 7); // 1d6
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // --- d8 : 3d8..15d8 (52..64) et 16d8..20d8 (149..153) ---
+    // base : 1d8 = 8, 2d8 = 11
+    if ( (nIdx >= 52 && nIdx <= 64) || (nIdx >= 149 && nIdx <= 153) )
+    {
+        if (nIdx >= 52 && nIdx <= 64) count = nIdx - 49; else count = nIdx - 133;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 11); // 2d8
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 8); // 1d8
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // --- d10 : 3d10..15d10 (65..77) et 16d10..20d10 (154..158) ---
+    // base : 1d10 = 9, 2d10 = 13
+    if ( (nIdx >= 65 && nIdx <= 77) || (nIdx >= 154 && nIdx <= 158) )
+    {
+        if (nIdx >= 65 && nIdx <= 77) count = nIdx - 62; else count = nIdx - 138;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 13); // 2d10
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 9); // 1d10
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // --- d12 : 3d12..10d12 (78..85) et 11d12..20d12 (124..133) ---
+    // base : 1d12 = 14, 2d12 = 15
+    if ( (nIdx >= 78 && nIdx <= 85) || (nIdx >= 124 && nIdx <= 133) )
+    {
+        if (nIdx >= 78 && nIdx <= 85) count = nIdx - 75; else count = nIdx - 113;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 15); // 2d12
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 14); // 1d12
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // --- d20 : 3d20..40d20 (86..123) ---
+    // Approximation : 1d20 ~ 2d10, on empile deux "2d10" par d20
+    if (nIdx >= 86 && nIdx <= 123)
+    {
+        count = nIdx - 83; // 3..40
+        int j = 0;
+        while (j < count)
+        {
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 13); // 2d10
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+
+            ip = ItemPropertyDamageBonusVsSAlign(nGoodEvil, nLawChaos, 13); // 2d10
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+
+            j = j + 1;
+        }
+        return TRUE;
+    }
+
+    // Inconnu
+    return FALSE;
+}
+
+
+
+
+
+
+int RFB_AddDamageBonusVsAlignCapped(object oIt, int nRarity, int nAlignGroup, int nDur)
+{
+    int cap = Cap_DB_Vs(nRarity);
+    int idx = RFB_SelectDiceIdxForCap(cap);
+    if (idx <= 0) return FALSE;
+    int nDmgType = RFB_RandDmgType();
+    return RFB_AddDmgBonusIdx_VsAlign(oIt, nAlignGroup, nDmgType, idx, nDur);
+}
+
+
+
+
+
+int RFB_AddDamageBonusVsRaceCapped(object oIt, int nRarity, int nRace, int nDur)
+{
+    int cap = Cap_DB_Vs(nRarity);
+    int idx = RFB_SelectDiceIdxForCap(cap);
+    if (idx <= 0) return FALSE;
+    int nDmgType = RFB_RandDmgType();
+    return RFB_AddDmgBonusIdx_VsRace(oIt, nRace, nDmgType, idx, nDur);
+}
+
+
+
+
+
+int RFB_AddDamageBonusVsSAlignCapped(object oIt, int nRarity, int nGoodEvil, int nLawChaos, int nDur)
+{
+    int cap = Cap_DB_Vs(nRarity);
+    int idx = RFB_SelectDiceIdxForCap(cap);
+    if (idx <= 0) return FALSE;
+    int nDmgType = RFB_RandDmgType();
+    return RFB_AddDmgBonusIdx_VsSAlign(oIt, nGoodEvil, nLawChaos, nDmgType, idx, nDur);
+}
+
+
 
 
 
