@@ -1290,8 +1290,6 @@ int _CapResistTotal(object oIt, int nRarity){
 int RFB_AddDamageBonusCapped(object oIt, int nRarity, int bTwoH, int nDmgType, int nIdx, int nDur){
     int add;
 
-    itemproperty ip;
-
     add = _EquivDamageBonusFromIdx(nIdx);
     if (add<=0) return FALSE;
     int cap = bTwoH ? Cap_DamageBonus_Total_2H(nRarity) : Cap_DamageBonus_Total_1H(nRarity);
@@ -1306,9 +1304,7 @@ int RFB_AddDamageBonusCapped(object oIt, int nRarity, int bTwoH, int nDmgType, i
         add  = _EquivDamageBonusFromIdx(nIdx);
     }
     if (add<=0) return FALSE;
-    ip = ItemPropertyDamageBonus(nDmgType, nIdx);
-    if (!GetIsItemPropertyValid(ip)) return FALSE;
-    AddItemProperty(nDur, ip, oIt);
+    if (!RFB_AddDmgBonusIdx(oIt, nDmgType, nIdx, nDur)) return FALSE;
     SetLocalInt(oIt,"rf_sum_dmgbonus", cur+add);
     return TRUE;
 }
@@ -2947,6 +2943,143 @@ int RFB_SelectIdx_DB_VsGeneric(int nRarity)
 {
     int cap = Cap_DB_Vs(nRarity);
     return RFB_SelectDiceIdxForCap(cap);
+}
+
+
+
+
+int RFB_AddDmgBonusIdx(object oIt, int nDmgType, int nIdx, int nDur)
+{
+    if (!GetIsObjectValid(oIt)) return FALSE;
+    itemproperty ip;
+    int count;
+
+    // Cas natifs
+    if ( (nIdx >= 1 && nIdx <= 20) || (nIdx >= 6 && nIdx <= 15) )
+    {
+        ip = ItemPropertyDamageBonus(nDmgType, nIdx);
+        if (!GetIsItemPropertyValid(ip)) return FALSE;
+        AddItemProperty(nDur, ip, oIt);
+        return TRUE;
+    }
+
+    // +11..+20 => +10 + reste
+    if (nIdx >= 21 && nIdx <= 30)
+    {
+        ip = ItemPropertyDamageBonus(nDmgType, 20);
+        if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        ip = ItemPropertyDamageBonus(nDmgType, nIdx - 10);
+        if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        return TRUE;
+    }
+
+    // d4
+    if ( (nIdx >= 31 && nIdx <= 38) || (nIdx >= 134 && nIdx <= 143) )
+    {
+        if (nIdx >= 31 && nIdx <= 38) count = nIdx - 28; else count = nIdx - 123;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 12); // 2d4
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 6); // 1d4
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d6
+    if ( (nIdx >= 39 && nIdx <= 51) || (nIdx >= 144 && nIdx <= 148) )
+    {
+        if (nIdx >= 39 && nIdx <= 51) count = nIdx - 36; else count = nIdx - 128;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 10); // 2d6
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 7); // 1d6
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d8
+    if ( (nIdx >= 52 && nIdx <= 64) || (nIdx >= 149 && nIdx <= 153) )
+    {
+        if (nIdx >= 52 && nIdx <= 64) count = nIdx - 49; else count = nIdx - 133;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 11); // 2d8
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 8); // 1d8
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d10
+    if ( (nIdx >= 65 && nIdx <= 77) || (nIdx >= 154 && nIdx <= 158) )
+    {
+        if (nIdx >= 65 && nIdx <= 77) count = nIdx - 62; else count = nIdx - 138;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 13); // 2d10
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 9); // 1d10
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d12
+    if ( (nIdx >= 78 && nIdx <= 85) || (nIdx >= 124 && nIdx <= 133) )
+    {
+        if (nIdx >= 78 && nIdx <= 85) count = nIdx - 75; else count = nIdx - 113;
+        while (count >= 2)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 15); // 2d12
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            count = count - 2;
+        }
+        if (count == 1)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 14); // 1d12
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+        }
+        return TRUE;
+    }
+
+    // d20 ~ 2d10 + 2d10 (approx)
+    if (nIdx >= 86 && nIdx <= 123)
+    {
+        count = nIdx - 83; // 3..40
+        int j = 0;
+        while (j < count)
+        {
+            ip = ItemPropertyDamageBonus(nDmgType, 13);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            ip = ItemPropertyDamageBonus(nDmgType, 13);
+            if (GetIsItemPropertyValid(ip)) AddItemProperty(nDur, ip, oIt);
+            j = j + 1;
+        }
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 
